@@ -17,6 +17,8 @@ from langchain.agents import AgentExecutor
 from langchain.pydantic_v1 import BaseModel, Field
 from langchain_core.messages import BaseMessage
 from langserve import add_routes
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables from .env file
 load_dotenv()
@@ -51,12 +53,22 @@ agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 # 4. App definition
 app = FastAPI(
-  title="LangChain Server",
-  version="1.0",
-  description="A simple API server using LangChain's Runnable interfaces",
+    title="LangChain Server",
+    version="1.0",
+    description="A simple API server using LangChain's Runnable interfaces",
+)
+
+# Add CORSMiddleware to the application instance to allow all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 # 5. Adding chain route
+
 
 class Input(BaseModel):
     input: str
@@ -68,6 +80,7 @@ class Input(BaseModel):
 
 class Output(BaseModel):
     output: str
+
 
 add_routes(
     app,
