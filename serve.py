@@ -3,7 +3,6 @@ from typing import List
 from dotenv import load_dotenv
 import os
 from fastapi import FastAPI
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_openai import OpenAIEmbeddings
@@ -17,8 +16,12 @@ from langchain.agents import AgentExecutor
 from langchain.pydantic_v1 import BaseModel, Field
 from langchain_core.messages import BaseMessage
 from langserve import add_routes
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -67,9 +70,10 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+logging.info("CORS configuration applied successfully.")
+
+
 # 5. Adding chain route
-
-
 class Input(BaseModel):
     input: str
     chat_history: List[BaseMessage] = Field(
@@ -82,6 +86,40 @@ class Output(BaseModel):
     output: str
 
 
+class AgentInvokeRequest(BaseModel):
+    input: str
+    chat_history: List[BaseMessage] = Field(
+        ...,
+        extra={"widget": {"type": "chat", "input": "location"}},
+    )
+    file_content: str
+
+@app.post("/agent/invoke")
+async def agent_invoke(request: AgentInvokeRequest):
+    print(f"Request body: {request.json()}")
+    print(f"Received input: {request.input}")
+    print(f"Received file content (first 100 characters): {request.file_content[:100]}")
+
+    try:
+        context = {
+            "input": request.input,
+            "chat_history": request.chat_history,
+            "file_content": request.file_content 
+        }
+
+        # Invoke the agent with the context
+        response = await agent_executor.ainvoke(context)
+        
+        agent_response = response.get("output", "No response generated.")
+        
+        print(f"Response from agent: {agent_response}")
+
+    except Exception as e:
+        print(f"Error processing request: {e}")
+        return {"output": "An error occurred while processing your request."}
+
+    return {"output": agent_response}
+
 add_routes(
     app,
     agent_executor.with_types(input_type=Input, output_type=Output),
@@ -90,5 +128,4 @@ add_routes(
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="localhost", port=8000)
+    uvicorn.run("serve:app", host="localhost", port=8000, log_level="debug", reload=True)
