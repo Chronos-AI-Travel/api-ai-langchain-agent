@@ -54,11 +54,11 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are an expert Travel API Integrator. Your mission is to integrate the user's files with the Duffel API based on the content of their repository. "
-            "1. Review the indexed Duffel docs to understand the API. "
-            "2. List out the repository files for me. "
-            "3. Analyze the repository files to identify where and how the Duffel API can be integrated. "
-            "4. Suggest specific files and code changes for Duffel API integration.",
+            "You are an expert Travel API Integrator. Your mission is to integrate the my files with the Duffel API based on the content of their repository. "
+            "1. Here are my repository files."
+            "\n\nRepository Files:\n{file_list}\n\nRepository Content:\n{github_file_content}"
+            "2. Rewrite the file for me, but include the functions and component adjustments that will make flight search work according to the duffel docs."
+            "return just the code to me, do not use placeholders, give me all the code.. Also as the first line of the response write the name of the file you have edited, just the name nothing else.",
         ),
         ("user", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -93,7 +93,7 @@ class GithubInfo(BaseModel):
 
 
 class AgentInvokeRequest(BaseModel):
-    input: str = ""  # Set a default value to make it optional
+    input: str = ""
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
@@ -111,9 +111,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         access_token=access_token,
         github_api_url="https://api.github.com",
         file_filter=lambda file_path: file_path.endswith(".txt")
-        or file_path.endswith(".md")
-        or file_path.endswith(".js")
-        or file_path.endswith(".json"),
+        # or file_path.endswith(".md")
+        or file_path.endswith(".js") or file_path.endswith(".json"),
     )
     github_documents = github_loader.load()
     file_paths = [doc.metadata["path"] for doc in github_documents]
