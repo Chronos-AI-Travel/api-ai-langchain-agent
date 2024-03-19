@@ -12,12 +12,11 @@ from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.tools.retriever import create_retriever_tool
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain import hub
 from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.pydantic_v1 import BaseModel, Field
 from langchain_core.messages import BaseMessage
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -100,7 +99,6 @@ async def agent_invoke(request: AgentInvokeRequest):
     print(f"Request body: {request.json()}")
     print(f"Received input: {request.input}")
     print(f"Received file content (first 100 characters): {request.file_content[:100]}")
-
     try:
         context = {
             "input": request.input,
@@ -110,7 +108,6 @@ async def agent_invoke(request: AgentInvokeRequest):
         response = await agent_executor.ainvoke(context)
         agent_response = response.get("output", "No response generated.")
         print(f"Response from agent: {agent_response}")
-
     except Exception as e:  # pylint: disable=broad-except
         exception_type = e.__class__.__name__
         print(f"Error processing request: {exception_type}: {e}")
@@ -130,7 +127,6 @@ async def agent_invoke(request: AgentInvokeRequest):
         return formatted_response
 
     formatted_agent_response = format_response(agent_response)
-
     return {"output": formatted_agent_response}
 
 
