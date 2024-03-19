@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.document_loaders import GithubFileLoader
+from langchain_community.document_loaders import GithubFileLoader
 from langchain.tools.retriever import create_retriever_tool
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain.agents import AgentExecutor, create_openai_functions_agent
@@ -56,8 +56,9 @@ prompt = ChatPromptTemplate.from_messages(
             "system",
             "You are an expert Travel API Integrator. Your mission is to integrate the user's files with the Duffel API based on the content of their repository. "
             "1. Review the indexed Duffel docs to understand the API. "
-            "2. Analyze the repository files to identify where and how the Duffel API can be integrated. "
-            "3. Suggest specific files and code changes for Duffel API integration.",
+            "2. List out the repository files for me. "
+            "3. Analyze the repository files to identify where and how the Duffel API can be integrated. "
+            "4. Suggest specific files and code changes for Duffel API integration.",
         ),
         ("user", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
