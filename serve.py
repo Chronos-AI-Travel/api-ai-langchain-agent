@@ -42,7 +42,7 @@ retriever = vector.as_retriever()
 # 2. Create Tools
 retriever_tool = create_retriever_tool(
     retriever,
-    "langsmith_search",
+    "Duffel_docs",
     "Search for information about integrating with Duffel. For any questions about what code to suggest, you must use this tool!",
 )
 search = TavilySearchResults()
@@ -116,6 +116,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         or file_path.endswith(".json"),
     )
     github_documents = github_loader.load()
+    file_paths = [doc.metadata["path"] for doc in github_documents]
+    file_list_str = "\n".join(file_paths)
 
     if github_documents:
         print("Files loaded from the repository:")
@@ -130,6 +132,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "input": request.input,
             "chat_history": request.chat_history,
             "github_file_content": github_file_content,
+            "file_list": file_list_str,
         }
         response = await agent_executor.ainvoke(context)
         agent_response = response.get("output", "No response generated.")
