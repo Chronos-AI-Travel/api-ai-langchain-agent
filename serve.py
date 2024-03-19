@@ -2,8 +2,6 @@
 
 from typing import List
 import os
-
-# import logging
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -11,6 +9,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.document_loaders import GithubFileLoader
 from langchain.tools.retriever import create_retriever_tool
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain.agents import AgentExecutor, create_openai_functions_agent
@@ -27,6 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
+access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+
 
 # 1. Load Retriever
 loader = WebBaseLoader("https://duffel.com/docs/guides/getting-started-with-flights")
@@ -36,6 +37,7 @@ documents = text_splitter.split_documents(docs)
 embeddings = OpenAIEmbeddings()
 vector = FAISS.from_documents(documents, embeddings)
 retriever = vector.as_retriever()
+
 
 # 2. Create Tools
 retriever_tool = create_retriever_tool(
@@ -52,8 +54,10 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are an expert Travel API Integrator. Your mission is to integrate the user's files with the Duffel API. "
-            "Plan your steps as follows: 1) Check which files need adjusting, 2) Review Duffel API docs, 3) Adjust relevant files as required, 4) Return adjusted files to the user.",
+            "You are an expert Travel API Integrator. Your mission is to integrate the user's files with the Duffel API based on the content of their repository. "
+            "1. Review the indexed Duffel docs to understand the API. "
+            "2. Analyze the repository files to identify where and how the Duffel API can be integrated. "
+            "3. Suggest specific files and code changes for Duffel API integration.",
         ),
         ("user", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -81,29 +85,50 @@ app.add_middleware(
 )
 
 
-# 5. Adding chain route
-class AgentInvokeRequest(BaseModel):  # pylint: disable=R0903
-    """Agent Invoke Scheme"""
+# 5. Schema
+class GithubInfo(BaseModel):
+    # access_token: str
+    repo: str
 
-    input: str
+
+class AgentInvokeRequest(BaseModel):
+    input: str = ""  # Set a default value to make it optional
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
     )
-    file_content: str
+    github_info: GithubInfo
 
 
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
-    """Invole the agent response"""
+    """Invoke the agent response"""
     print(f"Request body: {request.json()}")
     print(f"Received input: {request.input}")
-    print(f"Received file content (first 100 characters): {request.file_content[:100]}")
+    github_loader = GithubFileLoader(
+        repo=request.github_info.repo,
+        access_token=access_token,
+        github_api_url="https://api.github.com",
+        file_filter=lambda file_path: file_path.endswith(".txt")
+        or file_path.endswith(".md")
+        or file_path.endswith(".js")
+        or file_path.endswith(".json"),
+    )
+    github_documents = github_loader.load()
+
+    if github_documents:
+        print("Files loaded from the repository:")
+        for doc in github_documents:
+            print(doc.metadata["path"])
+    else:
+        print("No documents were loaded from the repository.")
+
+    github_file_content = "\n".join([doc.page_content for doc in github_documents])
     try:
         context = {
             "input": request.input,
             "chat_history": request.chat_history,
-            "file_content": request.file_content,
+            "github_file_content": github_file_content,
         }
         response = await agent_executor.ainvoke(context)
         agent_response = response.get("output", "No response generated.")
