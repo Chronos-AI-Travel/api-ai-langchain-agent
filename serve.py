@@ -2,7 +2,8 @@
 
 from typing import List
 import os
-import logging
+
+# import logging
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -20,7 +21,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -78,7 +79,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-logging.info("CORS configuration applied successfully.")
 
 
 # 5. Adding chain route
