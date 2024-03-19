@@ -4,7 +4,7 @@ from typing import List
 import os
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import FAISS
@@ -19,6 +19,12 @@ from langchain_core.messages import BaseMessage
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from langchain.indexes import SQLRecordManager, index
+from langchain_core.documents import Document
+from langchain_community.vectorstores import FAISS
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 
 # logging.basicConfig(level=logging.DEBUG)
 
@@ -37,6 +43,26 @@ documents = text_splitter.split_documents(docs)
 embeddings = OpenAIEmbeddings()
 vector = FAISS.from_documents(documents, embeddings)
 retriever = vector.as_retriever()
+
+# Repo Indexing
+namespace = "elasticsearch/your_index_name"
+record_manager = SQLRecordManager(
+    namespace, db_url="sqlite:///record_manager_cache.sql"
+)
+record_manager.create_schema()
+vectorstore = FAISS.from_documents(documents, embeddings)
+
+doc1 = Document(page_content="Example content 1", metadata={"source": "file1.txt"})
+doc2 = Document(page_content="Example content 2", metadata={"source": "file2.txt"})
+
+index(
+    [doc1, doc2],
+    record_manager,
+    vectorstore,
+    cleanup="incremental",
+    source_id_key="source",
+)
+
 
 
 # 2. Create Tools
@@ -101,43 +127,88 @@ class AgentInvokeRequest(BaseModel):
     github_info: GithubInfo
 
 
+# Routes
+@app.post("/index/repository")
+async def index_repository(repo_info: GithubInfo, background_tasks: BackgroundTasks):
+    """
+    Endpoint to asynchronously index documents from a specified GitHub repository.
+    """
+    # Validate the GitHub access token and repo information
+    if not repo_info.repo or not access_token:
+        raise HTTPException(status_code=400, detail="Missing repository information or access token.")
+
+    # Use background tasks to handle the loading and indexing without blocking the API response
+    background_tasks.add_task(load_and_index_documents, repo_info.repo, access_token)
+
+    return {"message": f"Indexing of documents from {repo_info.repo} has been initiated."}
+
+async def load_and_index_documents(repo, access_token):
+    def load_documents():
+        return github_loader.load()
+
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor() as pool:
+        github_loader = GithubFileLoader(
+            repo=repo,
+            access_token=access_token,
+            github_api_url="https://api.github.com",
+            file_filter=lambda file_path: file_path.endswith(".txt")
+            or file_path.endswith(".md")
+            or file_path.endswith(".js")
+            or file_path.endswith(".json"),
+        )
+        # Run the synchronous load method in a thread pool
+        github_documents = await loop.run_in_executor(pool, load_documents)
+
+        # Initialize the embeddings generator
+        embeddings_generator = OpenAIEmbeddings()
+
+        # Process each document
+        for doc in github_documents:
+            # Generate embeddings for each document
+            doc_embedding = embeddings_generator.generate(doc.content)  # Adjust this line based on your actual method
+            
+            # Ensure your index function can handle the document and its embedding appropriately
+            index([doc], doc_embedding, record_manager, vectorstore, cleanup="incremental", source_id_key="source")
+
+        print(f"Indexed {len(github_documents)} documents from the repository.")
+
+    # Validate the GitHub access token and repo information
+    if not repo_info.repo or not access_token:
+        return {"message": "Missing repository information or access token."}
+
+    # Use background tasks to handle the loading and indexing without blocking the API response
+    background_tasks.add_task(load_and_index_documents, repo_info.repo, access_token)
+
+    return {"message": f"Indexing of documents from {repo_info.repo} has been initiated."}
+
+
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
     """Invoke the agent response"""
-    print(f"Request body: {request.json()}")
+    # Assuming the documents from both sources are already indexed
     print(f"Received input: {request.input}")
-    github_loader = GithubFileLoader(
-        repo=request.github_info.repo,
-        access_token=access_token,
-        github_api_url="https://api.github.com",
-        file_filter=lambda file_path: file_path.endswith(".txt")
-        or file_path.endswith(".md")
-        or file_path.endswith(".js")
-        or file_path.endswith(".json"),
-    )
-    github_documents = github_loader.load()
-    file_paths = [doc.metadata["path"] for doc in github_documents]
-    file_list_str = "\n".join(file_paths)
 
-    if github_documents:
-        print("Files loaded from the repository:")
-        for doc in github_documents:
-            print(doc.metadata["path"])
-    else:
-        print("No documents were loaded from the repository.")
+    # Dynamically adjust the search query based on the input or a specific need
+    dynamic_search_query = "search query based on request.input or other logic"
+    query_results = vectorstore.similarity_search(dynamic_search_query, k=10)
+    relevant_docs = [result.metadata["source"] for result in query_results]
+    print("Relevant documents:", relevant_docs)
 
-    github_file_content = "\n".join([doc.page_content for doc in github_documents])
+    # Prepare the context with both Duffel docs and GitHub repo content if needed
+    # This example assumes you have a way to fetch or reference the content as needed
+    combined_context = "Combined context from Duffel docs and GitHub repo documents"
+
     try:
         context = {
             "input": request.input,
             "chat_history": request.chat_history,
-            "github_file_content": github_file_content,
-            "file_list": file_list_str,
+            "combined_context": combined_context,  # Adjusted to use combined context
         }
         response = await agent_executor.ainvoke(context)
         agent_response = response.get("output", "No response generated.")
         print(f"Response from agent: {agent_response}")
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:
         exception_type = e.__class__.__name__
         print(f"Error processing request: {exception_type}: {e}")
         return {
