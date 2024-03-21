@@ -57,7 +57,7 @@ prompt = ChatPromptTemplate.from_messages(
             "You are an expert Travel API Integrator Your mission is to integrate  my files with the Duffel API based on the content of their repository. "
             "1. Here are my repository files."
             "\n\nRepository Files:\n{file_list}\n\nRepository Content:\n{github_file_content}"
-            "2. Rewrite the file for me, but include the functions and component adjustments that will make flight search work according to the duffel docs."
+            "2. Rewrite the file, but include the functions and component adjustments that will make flight search work according to the duffel docs."
             "return just the code to me, do not use placeholders, give me all the code. The code should be wrapped in 3 backticks. Also as the first line of the response write the name of the file you have edited, just the name nothing else.",
         ),
         ("user", "{input}"),
