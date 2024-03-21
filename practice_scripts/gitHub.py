@@ -13,7 +13,6 @@
 # os.environ["GITHUB_BASE_BRANCH"] = "main"
 
 # # This example also requires an OpenAI API key
-# os.environ["OPENAI_API_KEY"] = "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"
 
 # llm = ChatOpenAI(temperature=0, model="gpt-4-1106-preview")
 # github = GitHubAPIWrapper()
