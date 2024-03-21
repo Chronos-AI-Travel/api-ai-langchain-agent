@@ -54,11 +54,11 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are an expert Travel API Integrator. Your mission is to integrate the my files with the Duffel API based on the content of their repository. "
+            "You are an expert Travel API Integrator Your mission is to integrate  my files with the Duffel API based on the content of their repository. "
             "1. Here are my repository files."
             "\n\nRepository Files:\n{file_list}\n\nRepository Content:\n{github_file_content}"
             "2. Rewrite the file for me, but include the functions and component adjustments that will make flight search work according to the duffel docs."
-            "return just the code to me, do not use placeholders, give me all the code.. Also as the first line of the response write the name of the file you have edited, just the name nothing else.",
+            "return just the code to me, do not use placeholders, give me all the code. The code should be wrapped in 3 backticks. Also as the first line of the response write the name of the file you have edited, just the name nothing else.",
         ),
         ("user", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -105,7 +105,6 @@ class AgentInvokeRequest(BaseModel):
 async def agent_invoke(request: AgentInvokeRequest):
     """Invoke the agent response"""
     print(f"Request body: {request.json()}")
-    print(f"Received input: {request.input}")
     github_loader = GithubFileLoader(
         repo=request.github_info.repo,
         access_token=access_token,
