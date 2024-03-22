@@ -28,6 +28,23 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
 access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 
+# App
+app = FastAPI(
+    title="LangChain Server",
+    version="1.0",
+    description="A simple API server using LangChain's Runnable interfaces",
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 # Loader Tool
 def create_loader(docslink: str):
     loader = WebBaseLoader(docslink)
@@ -67,21 +84,6 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-# App
-app = FastAPI(
-    title="LangChain Server",
-    version="1.0",
-    description="A simple API server using LangChain's Runnable interfaces",
-)
-
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Schema
 class AgentInvokeRequest(BaseModel):
