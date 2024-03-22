@@ -106,8 +106,10 @@ async def agent_invoke(request: AgentInvokeRequest):
         repo=request.repo,
         access_token=access_token,
         github_api_url="https://api.github.com",
-        file_filter=lambda file_path: file_path.endswith(".txt")
-        or file_path.endswith(".js") or file_path.endswith(".json"),
+       file_filter=lambda file_path: (file_path.endswith(".js") 
+        and not "config" in file_path 
+        and not file_path.endswith("layout.js"))
+        or file_path == "package.json",
     )
     github_documents = github_loader.load()
     file_paths = [doc.metadata["path"] for doc in github_documents]
