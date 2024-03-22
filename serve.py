@@ -157,6 +157,10 @@ async def agent_invoke(request: AgentInvokeRequest):
     return {"output": formatted_agent_response}
 
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
 if __name__ == "__main__":
     uvicorn.run(
         "serve:app", host="localhost", port=8000, log_level="debug", reload=True
