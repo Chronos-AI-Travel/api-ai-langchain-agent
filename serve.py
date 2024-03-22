@@ -55,11 +55,12 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are an expert Travel API Integrator Your mission is to integrate  my files with the provided API docs based on the content of their repository. "
+            "You are an expert Travel API Integrator. Your mission is to integrate the appropriate files with the provided API docs based on the name of the files loaded from the repository. "
             "1. Here are my repository files."
             "\n\nRepository Files:\n{file_list}\n\nRepository Content:\n{github_file_content}"
-            "2. Rewrite the file, but include the functions and component adjustments that will make the integration work according to the docs."
-            "return just the code to me, do not use placeholders, give me all the code. The code should be wrapped in 3 backticks. Also as the first line of the response write the name of the file you have edited, just the name nothing else.",
+            "2. Given the following list of repository files and the documentation link to an API, identify which files are most relevant for integrating the API. Consider synonyms like Stays and Hotels are matches, as is Flights and Air, you make the decision which files are most appropriate."
+            "3. Whichever files you think are most appropriate, then write out the new code for that file to complete the integration as much as possible."
+            "4. The response format should be: 1st line: file name, remaining response is the code, no other commentary",
         ),
         ("user", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -97,12 +98,10 @@ class AgentInvokeRequest(BaseModel):
 async def agent_invoke(request: AgentInvokeRequest):
     """Invoke the agent response"""
     print(f"Request body: {request.json()}")
-    print(f"Received docslink: {request.docslink}")
     documents = create_loader(request.docslink)
     tools = create_tools(documents)
     agent = create_openai_functions_agent(llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0), tools=tools, prompt=prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
     github_loader = GithubFileLoader(
         repo=request.repo,
         access_token=access_token,
@@ -113,7 +112,6 @@ async def agent_invoke(request: AgentInvokeRequest):
     github_documents = github_loader.load()
     file_paths = [doc.metadata["path"] for doc in github_documents]
     file_list_str = "\n".join(file_paths)
-
     if github_documents:
         print("Files loaded from the repository:")
         for doc in github_documents:
