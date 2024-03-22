@@ -1,4 +1,4 @@
-"""Langchain Agent"""
+"""Integration Agent"""
 
 from typing import List
 import os
@@ -22,13 +22,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # logging.basicConfig(level=logging.DEBUG)
 
-#1 Load env Variables
+# Env Variables
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
 access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 
-#2 Create Loader Tool
+# Loader Tool
 def create_loader(docslink: str):
     loader = WebBaseLoader(docslink)
     docs = loader.load()
@@ -36,7 +36,7 @@ def create_loader(docslink: str):
     documents = text_splitter.split_documents(docs)
     return documents
 
-#3 Put Tools Together
+# Tools
 def create_tools(documents):
     embeddings = OpenAIEmbeddings()
     vector = FAISS.from_documents(documents, embeddings)
@@ -50,7 +50,7 @@ def create_tools(documents):
     tools = [retriever_tool, search]
     return tools
 
-#4 Create Agent
+# Agent
 prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -66,15 +66,14 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-
-#5 App definition
+# App
 app = FastAPI(
     title="LangChain Server",
     version="1.0",
     description="A simple API server using LangChain's Runnable interfaces",
 )
 
-#6 Add CORSMiddleware to the application instance to allow all origins
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -83,23 +82,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-#7 Schema
-class GithubInfo(BaseModel):
-    # access_token: str
-    repo: str
-
-
+# Schema
 class AgentInvokeRequest(BaseModel):
     input: str = ""
+    docslink: str
+    repo: str
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
     )
-    github_info: GithubInfo
-    docslink: str
 
-#8 Routes
+# Agent Route
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
     """Invoke the agent response"""
@@ -111,7 +104,7 @@ async def agent_invoke(request: AgentInvokeRequest):
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
 
     github_loader = GithubFileLoader(
-        repo=request.github_info.repo,
+        repo=request.repo,
         access_token=access_token,
         github_api_url="https://api.github.com",
         file_filter=lambda file_path: file_path.endswith(".txt")
@@ -160,11 +153,12 @@ async def agent_invoke(request: AgentInvokeRequest):
     formatted_agent_response = format_response(agent_response)
     return {"output": formatted_agent_response}
 
-
+# Root Route
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
 
+# Server
 if __name__ == "__main__":
     uvicorn.run(
         "serve:app", host="localhost", port=8000, log_level="debug", reload=True
