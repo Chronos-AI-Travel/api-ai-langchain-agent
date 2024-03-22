@@ -1,4 +1,4 @@
-"""Langchain Duffel Agent"""
+"""Langchain Agent"""
 
 from typing import List
 import os
@@ -22,61 +22,59 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # logging.basicConfig(level=logging.DEBUG)
 
-# Load environment variables from .env file
+#1 Load env Variables
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
 access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 
+#2 Create Loader Tool
+def create_loader(docslink: str):
+    loader = WebBaseLoader(docslink)
+    docs = loader.load()
+    text_splitter = RecursiveCharacterTextSplitter()
+    documents = text_splitter.split_documents(docs)
+    return documents
 
-# 1. Load Retriever
-loader = WebBaseLoader("https://duffel.com/docs/guides/getting-started-with-flights")
-docs = loader.load()
-text_splitter = RecursiveCharacterTextSplitter()
-documents = text_splitter.split_documents(docs)
-embeddings = OpenAIEmbeddings()
-vector = FAISS.from_documents(documents, embeddings)
-retriever = vector.as_retriever()
+#3 Put Tools Together
+def create_tools(documents):
+    embeddings = OpenAIEmbeddings()
+    vector = FAISS.from_documents(documents, embeddings)
+    retriever = vector.as_retriever()
+    retriever_tool = create_retriever_tool(
+        retriever,
+        "docs_retriever",
+        "Search for information about integrating with a travel provider. For any questions about what code to suggest, you must use this tool!",
+    )
+    search = TavilySearchResults()
+    tools = [retriever_tool, search]
+    return tools
 
-
-# 2. Create Tools
-retriever_tool = create_retriever_tool(
-    retriever,
-    "Duffel_docs",
-    "Search for information about integrating with Duffel. For any questions about what code to suggest, you must use this tool!",
-)
-search = TavilySearchResults()
-tools = [retriever_tool, search]
-
-
-# 3. Create Agent
+#4 Create Agent
 prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are an expert Travel API Integrator Your mission is to integrate  my files with the Duffel API based on the content of their repository. "
+            "You are an expert Travel API Integrator Your mission is to integrate  my files with the provided API docs based on the content of their repository. "
             "1. Here are my repository files."
             "\n\nRepository Files:\n{file_list}\n\nRepository Content:\n{github_file_content}"
-            "2. Rewrite the file, but include the functions and component adjustments that will make flight search work according to the duffel docs."
+            "2. Rewrite the file, but include the functions and component adjustments that will make the integration work according to the docs."
             "return just the code to me, do not use placeholders, give me all the code. The code should be wrapped in 3 backticks. Also as the first line of the response write the name of the file you have edited, just the name nothing else.",
         ),
         ("user", "{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ]
 )
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-agent = create_openai_functions_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
 
 
-# 4. App definition
+#5 App definition
 app = FastAPI(
     title="LangChain Server",
     version="1.0",
     description="A simple API server using LangChain's Runnable interfaces",
 )
 
-# Add CORSMiddleware to the application instance to allow all origins
+#6 Add CORSMiddleware to the application instance to allow all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -86,7 +84,7 @@ app.add_middleware(
 )
 
 
-# 5. Schema
+#7 Schema
 class GithubInfo(BaseModel):
     # access_token: str
     repo: str
@@ -99,18 +97,24 @@ class AgentInvokeRequest(BaseModel):
         extra={"widget": {"type": "chat", "input": "location"}},
     )
     github_info: GithubInfo
+    docslink: str
 
-
+#8 Routes
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
     """Invoke the agent response"""
     print(f"Request body: {request.json()}")
+    print(f"Received docslink: {request.docslink}")
+    documents = create_loader(request.docslink)
+    tools = create_tools(documents)
+    agent = create_openai_functions_agent(llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0), tools=tools, prompt=prompt)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+
     github_loader = GithubFileLoader(
         repo=request.github_info.repo,
         access_token=access_token,
         github_api_url="https://api.github.com",
         file_filter=lambda file_path: file_path.endswith(".txt")
-        # or file_path.endswith(".md")
         or file_path.endswith(".js") or file_path.endswith(".json"),
     )
     github_documents = github_loader.load()
