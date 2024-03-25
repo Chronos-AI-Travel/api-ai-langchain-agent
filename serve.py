@@ -20,9 +20,9 @@ from langchain_core.messages import BaseMessage
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-
-# import firebase_admin
-# from firebase_admin import credentials, firestore
+import firebase_admin
+from firebase_admin import credentials, firestore
+from datetime import datetime
 
 # Env Variables
 load_dotenv()
@@ -32,9 +32,10 @@ access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 session_store = {}
 
 # Firestore
-# cred = credentials.Certificate('path/to/your/firebase-credentials.json')
-# firebase_admin.initialize_app(cred)
-# db = firestore.client()
+cred = credentials.Certificate("firebase_service_account.json")
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # App
 app = FastAPI(
@@ -83,6 +84,7 @@ class AgentInvokeRequest(BaseModel):
     session_id: str
     docslink: str
     repo: str
+    project: str
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
@@ -94,6 +96,7 @@ class AgentInvokeRequest(BaseModel):
 async def agent_invoke(request: AgentInvokeRequest):
     """Invoke the agent response"""
     session_id = request.session_id
+    project_id = request.project
     session_data = session_store.get(session_id, {"step": 1})
     documents = create_loader(request.docslink)
     tools = create_tools(documents)
@@ -113,14 +116,17 @@ async def agent_invoke(request: AgentInvokeRequest):
         print(f"GitHub documents loaded: {len(github_documents)} documents")
         file_paths = [doc.metadata["path"] for doc in github_documents]
         file_list_str = "\n".join(file_paths)
-        github_file_content = "\n".join([doc.page_content for doc in github_documents])
+        github_file_content = "\n\n---\n\n".join([doc.page_content for doc in github_documents])  # Separate each file's content with a clear delimiter
+        sanitized_content = github_file_content.replace("{", "{{").replace("}", "}}")
+
         step_1_prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
                     "You are an expert Travel API Integrator. "
                     "Given the following list of repository files and the documentation link to an API, identify which files are most relevant for integrating the API. Consider synonyms like Stays and Hotels are matches, as is Flights and Air, you make the decision which files are most appropriate. "
-                    f"\n\nRepository Files:\n{file_list_str}\n",
+                    f"\n\nRepository Files:\n{file_list_str}\n"
+                    f"\n\nFile Contents:\n{sanitized_content}\n",  # Include file contents separately
                 ),
                 (
                     "user",
@@ -140,7 +146,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "chat_history": request.chat_history,
             "docslink": request.docslink,
             "repo": request.repo,
-            # "github_file_content": github_file_content,
+            "github_file_content": github_file_content,
             "file_list": file_list_str,
         }
         response = await agent_executor.ainvoke(context)
@@ -150,6 +156,19 @@ async def agent_invoke(request: AgentInvokeRequest):
         print(f"Suggested files: {suggested_files}")
 
         suggested_files_list = suggested_files.split("\n")
+        db = firestore.client()
+        for file_name in suggested_files_list:
+            doc_ref = db.collection("projectFiles").document()
+            doc_ref.set(
+                {
+                    "name": file_name,
+                    "createdAt": datetime.now(),
+                    "project": db.collection("projects").document(project_id),
+                    "code": "placeholder code",
+                }
+            )
+            print(f"Document created for file: {file_name}")
+
         session_store[session_id] = {
             "step": 2,
             "suggested_files": suggested_files_list,
@@ -184,9 +203,9 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "system",
                     "You are an expert Travel API Integrator. "
                     "Your task now is to review the contents of the suggested files and the documentation provided at the docslink. Based on your review, propose the functions that need to be added or modified in the suggested files to integrate with the API effectively. "
-                    "Consider synonyms like Stays and Hotels are matches, as is Flights and Air, when determining the relevance of functions. ",
-                    # f"\n\nSuggested Files and Their Contents:\n{filtered_content}\n"
-                    # f"\nDocumentation Link: {docslink}\n",
+                    "Consider synonyms like Stays and Hotels are matches, as is Flights and Air, when determining the relevance of functions. "
+                    f"\n\nSuggested Files and Their Contents:\n{filtered_content}\n"
+                    f"\nDocumentation Link: {docslink}\n",
                 ),
                 (
                     "user",
@@ -545,6 +564,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "message": "Impact analysis completed",
             "output": formatted_impact_analysis_response,
         }
+
 
 def format_response(action_result):
     parts = action_result.split("\n")
