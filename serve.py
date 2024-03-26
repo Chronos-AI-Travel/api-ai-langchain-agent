@@ -1,8 +1,11 @@
 """Integration Agent"""
 
 # Imports
-from typing import List
+from typing import List, Optional
 import os
+import httpx
+import base64
+import json
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -23,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
+import asyncio
 
 # Env Variables
 load_dotenv()
@@ -78,6 +82,26 @@ def create_tools(documents):
     return tools
 
 
+# Fetch File Content
+async def fetch_file_content(url: str):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        # Assuming the response is JSON and contains a 'content' field encoded in base64
+        content_data = json.loads(response.text)
+        if (
+            "content" in content_data
+            and "encoding" in content_data
+            and content_data["encoding"] == "base64"
+        ):
+            # Decode the base64 content
+            decoded_content = base64.b64decode(content_data["content"])
+            # Convert bytes to string assuming UTF-8 encoding
+            return decoded_content.decode("utf-8")
+        else:
+            # Return an empty string or some error message if 'content' or 'encoding' is not found
+            return "Content not found or not in base64 encoding."
+
+
 # Schema
 class AgentInvokeRequest(BaseModel):
     input: str = ""
@@ -85,6 +109,8 @@ class AgentInvokeRequest(BaseModel):
     docslink: str
     repo: str
     project: str
+    suggested_files: Optional[List[str]] = None
+    suggested_file_urls: Optional[List[str]] = None
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
@@ -94,70 +120,64 @@ class AgentInvokeRequest(BaseModel):
 # Agent Route
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
-    """Invoke the agent response"""
+    """The Agent"""
     session_id = request.session_id
     project_id = request.project
-    session_data = session_store.get(session_id, {"step": 1})
+    session_data = session_store.get(session_id, {"step": 2})
     documents = create_loader(request.docslink)
     tools = create_tools(documents)
-    if session_data["step"] == 1:
-        github_loader = GithubFileLoader(
-            repo=request.repo,
-            access_token=access_token,
-            github_api_url="https://api.github.com",
-            file_filter=lambda file_path: (
-                file_path.endswith(".js")
-                and not "config" in file_path
-                and not file_path.endswith("layout.js")
-            )
-            or file_path == "package.json",
-        )
-        github_documents = github_loader.load()
-        print(f"GitHub documents loaded: {len(github_documents)} documents")
-        file_paths = [doc.metadata["path"] for doc in github_documents]
-        file_list_str = "\n".join(file_paths)
-        github_file_content = "\n\n---\n\n".join([doc.page_content for doc in github_documents])  # Separate each file's content with a clear delimiter
-        sanitized_content = github_file_content.replace("{", "{{").replace("}", "}}")
 
-        step_1_prompt = ChatPromptTemplate.from_messages(
+    if session_data["step"] == 2:
+        print("Entering Step 2: Refactoring suggested files...")
+        suggested_files = request.suggested_files
+        print(f"Suggested files received: {suggested_files}")
+        suggested_file_urls = request.suggested_file_urls
+        print(f"Suggested file URLs received: {suggested_file_urls}")
+
+        github_file_contents = await asyncio.gather(
+            *[fetch_file_content(url) for url in suggested_file_urls]
+        )
+        concatenated_content = "\n\n---\n\n".join(github_file_contents)
+        sanitized_content = concatenated_content.replace("{", "{{").replace("}", "}}")
+        print(f"Sanitised content: {sanitized_content}")
+
+        step_2_prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
                     "You are an expert Travel API Integrator. "
-                    "Given the following list of repository files and the documentation link to an API, identify which files are most relevant for integrating the API. Consider synonyms like Stays and Hotels are matches, as is Flights and Air, you make the decision which files are most appropriate. "
-                    f"\n\nRepository Files:\n{file_list_str}\n"
-                    f"\n\nFile Contents:\n{sanitized_content}\n",  # Include file contents separately
+                    "Your task is to review the contents of the files and the documentation provided at the docslink. Based on your review, provide functions that need to be added or modified in the suggested files to integrate with the API effectively. "
+                    f"\n\nFile Contents:\n{sanitized_content}\n"
+                    f"\n API Documentation Link for reference: {request.docslink}\n"
+                    "Only provide the code snippets",
                 ),
                 (
                     "user",
-                    "Based on this list of file names, and the docs provided to you in this link, tell me the list of file names which are most likely to be appropriate for integration with these docs. Just provide me with the file names, no other text before or after the file names, literally.",
+                    f"Please review the contents of the files ({sanitized_content}) and the documentation provided at the link ({request.docslink}). Based on your review, provide functions, in the same language as the code, that need to be added or modified in the suggested files to integrate with the API effectively. Only provide the code snippets",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
         )
-        agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
-            tools=tools,
-            prompt=step_1_prompt,
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "docslink": request.docslink,
+            "suggested_files": suggested_files,
             "repo": request.repo,
-            "github_file_content": github_file_content,
-            "file_list": file_list_str,
+            "github_file_content": sanitized_content,
+            "docslink": request.docslink,
         }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            tools=tools,
+            prompt=step_2_prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
         response = await agent_executor.ainvoke(context)
-        agent_response = response.get("output", "No response generated.")
-        print(f"Response from agent: {agent_response}")
-        suggested_files = response.get("output", "No files suggested.")
-        print(f"Suggested files: {suggested_files}")
+        action_result = response.get("output", "No action performed.")
+        print(f"Refactoring result: {action_result}")
 
-        suggested_files_list = suggested_files.split("\n")
         db = firestore.client()
-        for file_name in suggested_files_list:
+        for file_name in suggested_files:
             doc_ref = db.collection("projectFiles").document()
             doc_ref.set(
                 {
@@ -170,76 +190,12 @@ async def agent_invoke(request: AgentInvokeRequest):
             print(f"Document created for file: {file_name}")
 
         session_store[session_id] = {
-            "step": 2,
-            "suggested_files": suggested_files_list,
-            "github_file_content": github_file_content,
-            "file_list": file_list_str,
-            "docslink": request.docslink,
-        }
-        return {
-            "step": 1,
-            "message": "Files suggested for refactoring",
-            "suggested_files": suggested_files,
-        }
-
-    elif session_data["step"] == 2:
-        print("Entering Step 2: Refactoring suggested files...")
-        suggested_files = session_data.get("suggested_files", [])
-        github_file_content = session_data.get("github_file_content", "")
-        print(f"github_file_content: {github_file_content}")
-        file_list_str = session_data.get("file_list", "")
-        docslink = session_data.get("docslink", "")
-        file_contents = github_file_content.split("\n\n---\n\n")
-        file_paths = file_list_str.split("\n")
-        filtered_content = "\n\n---\n\n".join(
-            content
-            for file_path, content in zip(file_paths, file_contents)
-            if file_path in suggested_files
-        )
-
-        step_2_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are an expert Travel API Integrator. "
-                    "Your task now is to review the contents of the suggested files and the documentation provided at the docslink. Based on your review, propose the functions that need to be added or modified in the suggested files to integrate with the API effectively. "
-                    "Consider synonyms like Stays and Hotels are matches, as is Flights and Air, when determining the relevance of functions. "
-                    f"\n\nSuggested Files and Their Contents:\n{filtered_content}\n"
-                    f"\nDocumentation Link: {docslink}\n",
-                ),
-                (
-                    "user",
-                    "Please review the suggested file contents and the documentation at the provided link. Then, propose the functions that need to be added to these files for effective integration with the API. Provide the function signatures and a brief description of their purpose.",
-                ),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ]
-        )
-        context = {
-            "input": "",
-            "chat_history": request.chat_history,
-            "suggested_files": suggested_files,
-            "repo": request.repo,
-            "github_file_content": filtered_content,
-            "file_list": file_list_str,
-            "docslink": docslink,
-        }
-        agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
-            tools=tools,
-            prompt=step_2_prompt,
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-        response = await agent_executor.ainvoke(context)
-        action_result = response.get("output", "No action performed.")
-        print(f"Refactoring result: {action_result}")
-
-        session_store[session_id] = {
             "step": 3,
             "suggested_files": suggested_files,
-            "github_file_content": github_file_content,
-            "filtered_content": filtered_content,
+            # "github_file_content": github_file_content,
+            "filtered_content": sanitized_content,
             "action_result": action_result,
-            "docslink": docslink,
+            # "docslink": docslink,
         }
 
         formatted_agent_response = format_response(action_result)
