@@ -165,8 +165,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                 (
                     "user",
                     f"1. Review the API provider docs here: {request.docslink}."
-                    "2. Define the Payload required for the request explicitly."
-                    "3. Define the clearest error handling for this provider."
+                    "2. Define the Payload required for the request explicitly, only included the minimum required data fields if stated."
+                    "3. Define the response data structure also."
                     "Be concise, not verbose.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -236,7 +236,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Ensure you handle allow all CORS."
                     "Ensure you print the response."
                     "Use a flask app that will host this backend locally on port 5000."
-                    "Include thorough error handling."
+                    "Include error handling."
+                    "Dont hardcode the data, expect to recieve it from the frontend."
                     "Only return 2 sections in the response: The code, the commands to install any required dependencies."
                     "Comment out any non-code in your response.",
                 ),
@@ -330,6 +331,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"2. See the required request payload here here: {sanitized_docReview_response}. This should be factored into the frontend function you create."
                     f"2. Review the backend endpoint we just created for this project here: {sanitized_backend_endpoint_response}."
                     "3. Reply to me only the required frontend function that will correctly call the backend endpoint to make the integration work. assume the backend will be hosted on on http://localhost:5000/"
+                    "Do not include the fields, button and other UI elements here. Function only, aligned to the payload."
+                    "Do not hardcode the data, expect to receive it from the input fields we will create in a seperate request."
                     "Only return React code, no explanations, no headers or non-code text. Use fetch instead of axios",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -402,10 +405,10 @@ async def agent_invoke(request: AgentInvokeRequest):
                 ),
                 (
                     "user",
-                    "Context: We now need to create the frontend UI elements that will bring the API integration to life."
+                    "Context: We now need to create the frontend UI elements, e.g. fields, buttons, text etc that will bring the API integration to life."
                     f"1. Review the frontend functions we have made for the integration to the backend {sanitised_frontend_function_response}, These need to be aligned to the UI you are generating now."
-                    f"2. Review the payload that has been defined and create the UI based on this too: {sanitized_docReview_response}."
-                    "Generate the code for the UI components should be to make the integration work in the UI, request fields and response fields if possible."
+                    f"2. Review the payload that has been defined and create the UI fields based on this : {sanitized_docReview_response}."
+                    "Generate the code for the UI elements, not the functions, consider request fields and response."
                     "Only return React code, no explanation.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
