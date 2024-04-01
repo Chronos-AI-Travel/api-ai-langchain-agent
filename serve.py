@@ -126,6 +126,7 @@ class AgentInvokeRequest(BaseModel):
     project: str
     suggested_files: Optional[List[str]] = None
     suggested_file_urls: Optional[List[str]] = None
+    suggested_file_paths: Optional[List[str]] = None
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
@@ -142,33 +143,33 @@ async def agent_invoke(request: AgentInvokeRequest):
     session_data = session_store.get(session_id, {"step": 2})
     documents = create_loader(request.docslink)
     tools = create_tools(documents)
+    suggested_files = request.suggested_files
+    suggested_file_urls = request.suggested_file_urls
+    suggested_file_paths = request.suggested_file_paths
+    github_file_contents = await asyncio.gather(
+        *[fetch_file_content(url) for url in suggested_file_urls]
+    )
+    concatenated_github_file_contents = "\n\n---\n\n".join(github_file_contents)
+    sanitised_github_file_contents = concatenated_github_file_contents.replace(
+        "{", "{{"
+    ).replace("}", "}}")
 
     if session_data["step"] == 2:
-        print("Entering Step 2: Calculating required functions...")
-        suggested_files = request.suggested_files
-        suggested_file_urls = request.suggested_file_urls
-        github_file_contents = await asyncio.gather(
-            *[fetch_file_content(url) for url in suggested_file_urls]
-        )
-        concatenated_content = "\n\n---\n\n".join(github_file_contents)
-        sanitized_content = concatenated_content.replace("{", "{{").replace("}", "}}")
-        step_2_prompt = ChatPromptTemplate.from_messages(
+        print("Entering Step 2: Generating Backend Endpoints...")
+        prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "You are an expert travel API integration developer."
-                    f"1. Read the API provider documentation at {request.docslink}\n. Learn how to successfully integrate to the API."
-                    f"2. Review the codebase files here: {sanitized_content}. Figure out how the files need to be changed to successfully integrate to the API."
-                    "3. Return to me only the required frontend function in your response that will correctly call the backend to make the integration work."
-                    "Only return code, no explanation. Do not guess. If you do not know, tell me 'I can't figure this one out'. If a file does not need changes, ignore it.",
+                    "You are an expert travel API integration developer, code specialist",
                 ),
                 (
                     "user",
-                    "You are an expert travel API integration developer."
-                    f"1. Read the API provider documentation at {request.docslink}\n. Learn how to successfully integrate to the API."
-                    f"2. Review the codebase files here: {sanitized_content}. Figure out how the files need to be changed to successfully integrate to the API."
-                    "3. Return to me only the required frontend function in your response that will correctly call the backend to make the integration work."
-                    "Only return code, no explanation. Do not guess. If you do not know, tell me 'I can't figure this one out'. If a file does not need changes, ignore it.",
+                    f"1. Review the API provider docs here: {request.docslink}. Pay attention to what is needed in order to integrate with the providers content via API."
+                    f"Figure out what the backend function should be to make the integration work. It will need to be a route."
+                    "Write the python script for the backend that will call the API provider based on their docs."
+                    "Ensure you handle allow all CORS."
+                    "Use a flask app that will host this backend locally on port 5000."
+                    "Only return 2 sections in the response: The code, the commands to install any required dependencies.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -176,158 +177,20 @@ async def agent_invoke(request: AgentInvokeRequest):
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "suggested_files": suggested_files,
-            "repo": request.repo,
-            "github_file_content": sanitized_content,
             "docslink": request.docslink,
+            # "sanitised_github_file_contents": sanitised_github_file_contents,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
-            prompt=step_2_prompt,
+            prompt=prompt,
         )
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
         response = await agent_executor.ainvoke(context)
-        action_result = response.get("output", "No action performed.")
-
-        for file_name in suggested_files:
-            doc_ref = db.collection("projectFiles").document(file_name)
-            doc_ref.set(
-                {
-                    "name": file_name,
-                    "createdAt": datetime.now(),
-                    "project": db.collection("projects").document(project_id),
-                    "code": action_result,
-                }
-            )
-            print(f"Document created for file: {file_name}")
-
-        session_store[session_id] = {
-            "step": 3,
-            "suggested_files": suggested_files,
-            "sanitized_content": sanitized_content,
-            "action_result": action_result,
-        }
-
-        formatted_agent_response = format_response(action_result)
-        return {
-            "step": 2,
-            "message": "Refactoring performed on suggested files",
-            "output": formatted_agent_response,
-        }
-
-    elif session_data["step"] == 3:
-        print("Entering Step 3: Creating or Updating UI Components...")
-        suggested_files = request.suggested_files
-        sanitized_content = session_store[session_id].get("sanitized_content", "")
-        action_result = session_data.get("action_result", "")
-        sanitized_action_result = action_result.replace("{", "{{").replace("}", "}}")
-        step_3_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are an expert travel API integration developer."
-                    f"1. Review the function we have made for the integration to the API provider {sanitized_action_result}, learn how the system will work."
-                    f"2. Review the existing codebase files here: {sanitized_content}. Figure out what the UI components should be to make the integration work in the UI."
-                    "Only return code, no explanation. Do not guess. If you do not know, tell me 'I can't figure this one out'. If a file does not need changes, ignore it.",
-                ),
-                (
-                    "user",
-                    "You are an expert travel API integration developer."
-                    f"1. Review the function we have made for the integration to the API provider {sanitized_action_result}, learn how the system will work."
-                    f"2. Review the existing codebase files here: {sanitized_content}. Figure out what the UI components should be to make the integration work in the UI."
-                    "Only return code, no explanation. Do not guess. If you do not know, tell me 'I can't figure this one out'. If a file does not need changes, ignore it.",
-                ),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ]
-        )
-        context = {
-            "input": "",
-            "chat_history": request.chat_history,
-            "suggested_files": suggested_files,
-            "action_result": action_result,
-            "docslink": request.docslink,
-            "sanitized_content": sanitized_content,
-        }
-        agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
-            tools=tools,
-            prompt=step_3_prompt,
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-        response = await agent_executor.ainvoke(context)
-        ui_update_result = response.get("output", "No UI update action performed.")
-
-        for file_name in suggested_files:
-            doc_ref = db.collection("projectFiles").document(file_name)
-
-            doc = doc_ref.get()
-            existing_code = doc.to_dict().get("code", "") if doc.exists else ""
-            updated_code = existing_code + "\n\n" + ui_update_result
-
-            doc_ref.update({"code": updated_code})
-            print(f"Document for file: {file_name} updated with UI components")
-
-        session_store[session_id] = {
-            "step": 4,
-            "suggested_files": suggested_files,
-            "sanitized_content": sanitized_content,
-            "sanitized_action_result": sanitized_action_result,
-            "ui_update_result": ui_update_result,
-        }
-
-        formatted_ui_response = format_response(ui_update_result)
-        return {
-            "step": 3,
-            "message": "UI components created or updated",
-            "output": formatted_ui_response,
-        }
-
-    elif session_data["step"] == 4:
-        print("Entering Step 4: Generating Backend Endpoints...")
-        suggested_files = request.suggested_files
-        sanitized_content = session_store[session_id].get("sanitized_content", "")
-        sanitized_action_result = session_data.get("sanitized_action_result", "")
-        ui_update_result = session_data.get("ui_update_result", "")
-
-        step_4_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are an expert travel API integration developer."
-                    f"1. Review the function we have made for the integration to the API provider {sanitized_action_result}, learn how the system will work."
-                    f"2. Review the existing codebase files here: {sanitized_content}. Figure out what the backend function should be to make the integration work in the UI."
-                    f"Write the python script for the backend that will call the API provider based their {request.docslink}. Only return code, no explanation. Do not guess. If you do not know, tell me 'I can't figure this one out'. If a file does not need changes, ignore it.",
-                ),
-                (
-                    "user",
-                    "You are an expert travel API integration developer."
-                    f"1. Review the function we have made for the integration to the API provider {sanitized_action_result}, learn how the system will work."
-                    f"2. Review the existing codebase files here: {sanitized_content}. Figure out what the backend function should be to make the integration work in the UI."
-                    f"Write the python script for the backend that will call the API provider based their {request.docslink}. Only return code, no explanation. Do not guess. If you do not know, tell me 'I can't figure this one out'. If a file does not need changes, ignore it.",
-                ),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ]
-        )
-        context = {
-            "input": "",
-            "chat_history": request.chat_history,
-            "suggested_files": suggested_files,
-            "sanitized_action_result": sanitized_action_result,
-            "ui_update_result": ui_update_result,
-            "docslink": request.docslink,
-        }
-        agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
-            tools=tools,
-            prompt=step_4_prompt,
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-        response = await agent_executor.ainvoke(context)
-        backend_endpoint_result = response.get(
+        backend_endpoint_response = response.get(
             "output", "No backend endpoint action performed."
         )
-        print(f"Backend Endpoint result: {backend_endpoint_result}")
+        print(f"Backend Endpoint result: {backend_endpoint_response}")
 
         file_created = False
         for file_name in suggested_files:
@@ -338,7 +201,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                         "name": file_name,
                         "createdAt": datetime.now(),
                         "project": db.collection("projects").document(project_id),
-                        "code": backend_endpoint_result,
+                        "code": backend_endpoint_response,
                     }
                 )
                 print(
@@ -354,7 +217,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "name": default_file_name,
                     "createdAt": datetime.now(),
                     "project": db.collection("projects").document(project_id),
-                    "code": backend_endpoint_result,
+                    "code": backend_endpoint_response,
                 }
             )
             print(
@@ -362,22 +225,160 @@ async def agent_invoke(request: AgentInvokeRequest):
             )
 
         session_store[session_id] = {
-            "step": 5,
+            "step": 3,
             "suggested_files": suggested_files,
-            "sanitized_action_result": sanitized_action_result,
-            "ui_update_result": ui_update_result,
-            "backend_endpoint_result": backend_endpoint_result,
+            "backend_endpoint_response": backend_endpoint_response,
         }
 
-        formatted_backend_response = format_response(backend_endpoint_result)
+        formatted_backend_response = format_response(backend_endpoint_response)
+        return {
+            "step": 2,
+            "message": "Backend endpoints generated",
+            "output": formatted_backend_response,
+        }
+
+    elif session_data["step"] == 3:
+        print("Entering Step 3: Calculating required functions...")
+        backend_endpoint_response = session_data.get("backend_endpoint_response", "")
+        sanitized_backend_endpoint_response = backend_endpoint_response.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert travel API integration developer, code specialist",
+                ),
+                (
+                    "user",
+                    f"1. Review the API provider documentation at {request.docslink}\n. Learn how to successfully integrate to the API."
+                    f"2. Review the backend endpoint we just created for this project here: {sanitized_backend_endpoint_response}."
+                    "3. Reply to me only the required frontend function that will correctly call the backend endpoint to make the integration work. assume the backend will be hosted on on http://localhost:5000/"
+                    "Only return React code, no explanations, no headers or non-code text. Use fetch instead of axios",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "docslink": request.docslink,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        response = await agent_executor.ainvoke(context)
+        frontend_function_response = response.get("output", "No action performed.")
+
+        for index, file_name in enumerate(suggested_files):
+            file_path = suggested_file_paths[index]  # Get the corresponding file path
+            doc_ref = db.collection("projectFiles").document(file_name)
+            doc_ref.set(
+                {
+                    "name": file_name,
+                    "createdAt": datetime.now(),
+                    "project": db.collection("projects").document(project_id),
+                    "code": frontend_function_response,
+                    "repoPath": file_path,
+                }
+            )
+            print(
+                f"Document created/updated for file: {file_name} with path: {file_path}"
+            )
+
+        session_store[session_id] = {
+            "step": 4,
+            "suggested_files": suggested_files,
+            "frontend_function_response": frontend_function_response,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+        }
+
+        formatted_agent_response = format_response(frontend_function_response)
+        return {
+            "step": 3,
+            "message": "Refactoring performed on suggested files",
+            "output": formatted_agent_response,
+        }
+
+    elif session_data["step"] == 4:
+        print("Entering Step 4: Creating or Updating UI Components...")
+        frontend_function_response = session_data.get("frontend_function_response", "")
+        sanitised_frontend_function_response = frontend_function_response.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert travel API integration developer, code specialist",
+                ),
+                (
+                    "user",
+                    "Context: We now need to create the frontend UI elements that will bring the API integration to life."
+                    f"1. Review the frontend functions we have made for the integration to the backend {sanitised_frontend_function_response}, These need to be aligned to the UI you are generating now."
+                    f"2. Review the backend endpoints we have created too for more context: {sanitized_backend_endpoint_response}."
+                    "Generate the code for the UI components should be to make the integration work in the UI."
+                    "Only return React code, no explanation.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "suggested_files": suggested_files,
+            "sanitised_frontend_function_response": sanitised_frontend_function_response,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        response = await agent_executor.ainvoke(context)
+        ui_response = response.get("output", "No UI update action performed.")
+
+        for file_name in suggested_files:
+            doc_ref = db.collection("projectFiles").document(file_name)
+
+            doc = doc_ref.get()
+            existing_code = doc.to_dict().get("code", "") if doc.exists else ""
+            updated_code = existing_code + "\n\n" + ui_response
+
+            doc_ref.update({"code": updated_code})
+            print(f"Document for file: {file_name} updated with UI components")
+
+        session_store[session_id] = {
+            "step": 5,
+            "suggested_files": suggested_files,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "sanitised_frontend_function_response": sanitised_frontend_function_response,
+        }
+
+        formatted_ui_response = format_response(ui_response)
         return {
             "step": 4,
-            "message": "Backend endpoints generated or updated",
-            "output": formatted_backend_response,
+            "message": "UI components created or updated",
+            "output": formatted_ui_response,
         }
 
     elif session_data["step"] == 5:
         print("Entering Step 5: API Key section...")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        sanitised_frontend_function_response = session_data.get(
+            "sanitised_frontend_function_response", ""
+        )
+
         step_5_prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -415,8 +416,8 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 6,
-            # "action_result": action_result,
-            # "ui_update_result": ui_update_result,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "sanitised_frontend_function_response": sanitised_frontend_function_response,
         }
 
         steps_list = backend_apiKey_result.split("\n")
@@ -429,30 +430,27 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 6:
         print("Entering Step 6: Creating Integration Tests...")
-        action_result = session_data.get("action_result", "")
-        backend_endpoint_result = session_data.get("backend_endpoint_result", "")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        sanitised_frontend_function_response = session_data.get(
+            "sanitised_frontend_function_response", ""
+        )
         docslink = request.docslink
 
         step_6_prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "You are an expert Travel API Integrator focusing on quality assurance. "
-                    "Your task now is to create integration tests for the API provider based on the integration requirements identified in the previous steps. "
-                    "Consider the functionalities proposed for integration and ensure the tests cover these functionalities effectively. "
-                    "Write the code for the integration tests, nothing else, literally."
-                    f"\n\nIntegration Actions from Step 2:\n{action_result}\n"
-                    f"\nBackend Endpoint Result from Step 4:\n{backend_endpoint_result}\n"
-                    f"\nDocumentation Link: {docslink}\n",
+                    "You are an expert Travel API Integrator focusing on quality assurance. ",
                 ),
                 (
-                    "system",
-                    "You are an expert Travel API Integrator focusing on quality assurance."
-                    "Your task now is to create integration tests for the API provider based on the integration requirements identified in the previous steps."
+                    "user",
+                    "Your task now is to create backend in the same language as the provided backend code integration tests for the API provider based on the integration requirements identified in the previous steps."
                     "Consider the functionalities proposed for integration and ensure the tests cover these functionalities effectively."
                     "Write the code for the integration tests, nothing else, literally."
-                    f"\n\nIntegration Actions from Step 2:\n{action_result}\n"
-                    f"\nBackend Endpoint Result from Step 4:\n{backend_endpoint_result}\n"
+                    f"\n\nIntegration Actions from Step 2:\n{sanitised_frontend_function_response}\n"
+                    f"\nBackend Endpoint Result from Step 4:\n{sanitized_backend_endpoint_response}\n"
                     f"\nDocumentation Link: {docslink}\n",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -461,8 +459,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "action_result": action_result,
-            "backend_endpoint_result": backend_endpoint_result,
+            "sanitised_frontend_function_response": sanitised_frontend_function_response,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4", temperature=0),
@@ -494,6 +492,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         session_store[session_id] = {
             "step": 7,
             "integration_tests_result": integration_tests_result,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
 
         formatted_integration_tests_response = format_response(integration_tests_result)
@@ -504,30 +503,41 @@ async def agent_invoke(request: AgentInvokeRequest):
         }
 
     elif session_data["step"] == 7:
-        print("Entering Step 7: Scanning Codebase for Impact Analysis...")
-        suggested_files = session_data.get("suggested_files", [])
-        action_result = session_data.get("action_result", "")
-        ui_update_result = session_data.get("ui_update_result", "")
-        backend_apiKey_result = session_data.get("backend_apiKey_result", "")
-        integration_tests_result = session_data.get("integration_tests_result", "")
-        docslink = session_data.get("docslink", "")
+        print("Entering Step 7: Reviewing code for improvements...")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
 
-        step_7_prompt = ChatPromptTemplate.from_messages(
+        if suggested_files:
+            for file_name in suggested_files:
+                if file_name.endswith(".js"):
+                    doc_ref = db.collection("projectFiles").document(file_name)
+                    doc = doc_ref.get()
+                    if doc.exists:
+                        frontend_generated_code = doc.to_dict().get("code", "")
+                    else:
+                        frontend_generated_code = (
+                            "No code found in the document for the '.js' file."
+                        )
+                    break
+        sanitised_frontend_generated_code = frontend_generated_code.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+        print(f"sanitised_frontend_generated_code: {sanitised_frontend_generated_code}")
+
+        prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "You are an expert Travel API Integrator focusing on impact analysis. "
-                    "Your task now is to scan the codebase and highlight any areas of business or application logic that might be impacted by this integration. "
-                    "Consider the integration requirements identified in the previous steps and ensure to list the potentially impacted areas in a list format. ",
-                    # f"\n\nIntegration Actions from Step 2:\n{action_result}\n"
-                    # f"\nUI Update Actions from Step 3:\n{ui_update_result}\n"
-                    # f"\nBackend API Key Actions from Step 5:\n{backend_apiKey_result}\n"
-                    # f"\nIntegration Tests from Step 6:\n{integration_tests_result}\n"
-                    # f"\nDocumentation Link: {docslink}\n"
+                    "You are an expert Travel API Integrator, code generator.",
                 ),
                 (
                     "user",
-                    "Based on the integration actions identified and the results from previous steps, scan the codebase and list any areas that might be impacted by this integration.",
+                    f"1. Review the API content provider docs at {request.docslink}."
+                    f"2. Review the code at {sanitised_frontend_generated_code}."
+                    f"3. Now turn it into working code."
+                    f"It should contain the frontend function(s) calling the backend function as defined, the ui components and any necessary boilerplate. Assume the component is called App."
+                    f"I need to be able to copy and paste this into my file and it should work, so React code only. Assume this frontend code is all in one file, and the backend code with the API call to the provider is in a seperate file.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -535,46 +545,43 @@ async def agent_invoke(request: AgentInvokeRequest):
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "suggested_files": suggested_files,
-            "action_result": action_result,
-            "ui_update_result": ui_update_result,
-            "backend_apiKey_result": backend_apiKey_result,
-            "integration_tests_result": integration_tests_result,
-            "docslink": docslink,
+            "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
-            prompt=step_7_prompt,
+            prompt=prompt,
         )
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
         response = await agent_executor.ainvoke(context)
-        impact_analysis_result = response.get(
+        code_review_response = response.get(
             "output", "No impact analysis action performed."
         )
-        print(f"Impact Analysis result: {impact_analysis_result}")
+        print(f"Impact Analysis result: {code_review_response}")
+
+        if (
+            suggested_files
+            and code_review_response != "No impact analysis action performed."
+        ):
+            doc_ref.update({"code": code_review_response})
+            print(f"Document for file: {file_name} updated with new code.")
 
         session_store[session_id] = {
-            "step": 8,  # Prepare for the next step or completion
-            "suggested_files": suggested_files,
-            "action_result": action_result,
-            "ui_update_result": ui_update_result,
-            "backend_apiKey_result": backend_apiKey_result,
-            "integration_tests_result": integration_tests_result,
-            "impact_analysis_result": impact_analysis_result,
-            "docslink": docslink,
+            "step": 8,
         }
 
-        formatted_impact_analysis_response = format_response(impact_analysis_result)
+        formatted_code_review_response = format_response(code_review_response)
         return {
             "step": 7,
-            "message": "Impact analysis completed",
-            "output": formatted_impact_analysis_response,
+            "message": "Code review completed",
+            "output": formatted_code_review_response,
         }
 
 
-def format_response(action_result):
-    parts = action_result.split("\n")
+def format_response(frontend_function_response):
+    parts = frontend_function_response.split("\n")
     formatted_response = ""
     code_block_open = False
 
