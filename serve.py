@@ -169,6 +169,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Write the python script for the backend that will call the API provider based on their docs."
                     "Ensure you handle allow all CORS."
                     "Use a flask app that will host this backend locally on port 5000."
+                    "Include thorough error handling."
                     "Only return 2 sections in the response: The code, the commands to install any required dependencies.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -185,7 +186,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             tools=tools,
             prompt=prompt,
         )
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
         response = await agent_executor.ainvoke(context)
         backend_endpoint_response = response.get(
             "output", "No backend endpoint action performed."
