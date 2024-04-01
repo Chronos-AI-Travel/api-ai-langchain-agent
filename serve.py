@@ -140,7 +140,7 @@ async def agent_invoke(request: AgentInvokeRequest):
     session_id = request.session_id
     project_id = request.project
     db = firestore.client()
-    session_data = session_store.get(session_id, {"step": 2})
+    session_data = session_store.get(session_id, {"step": 1})
     documents = create_loader(request.docslink)
     tools = create_tools(documents)
     suggested_files = request.suggested_files
@@ -154,8 +154,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         "{", "{{"
     ).replace("}", "}}")
 
-    if session_data["step"] == 2:
-        print("Entering Step 2: Generating Backend Endpoints...")
+    if session_data["step"] == 1:
+        print("Entering Step 1: Starting doc review...")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -164,13 +164,10 @@ async def agent_invoke(request: AgentInvokeRequest):
                 ),
                 (
                     "user",
-                    f"1. Review the API provider docs here: {request.docslink}. Pay attention to what is needed in order to integrate with the providers content via API."
-                    f"Figure out what the backend function should be to make the integration work. It will need to be a route."
-                    "Write the python script for the backend that will call the API provider based on their docs."
-                    "Ensure you handle allow all CORS."
-                    "Use a flask app that will host this backend locally on port 5000."
-                    "Include thorough error handling."
-                    "Only return 2 sections in the response: The code, the commands to install any required dependencies.",
+                    f"1. Review the API provider docs here: {request.docslink}."
+                    "2. Define the Payload required for the request explicitly."
+                    "3. Define the clearest error handling for this provider."
+                    "Be concise, not verbose.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -179,10 +176,82 @@ async def agent_invoke(request: AgentInvokeRequest):
             "input": "",
             "chat_history": request.chat_history,
             "docslink": request.docslink,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+        response = await agent_executor.ainvoke(context)
+        docReview_response = response.get(
+            "output", "No backend endpoint action performed."
+        )
+        print(f"docReview_response: {docReview_response}")
+
+        document_name = "integrationStrategy.txt"
+        strategy_content = docReview_response
+        doc_ref = db.collection("projectFiles").document(document_name)
+        doc_ref.set(
+            {
+                "name": document_name,
+                "createdAt": datetime.now(),
+                "project": db.collection("projects").document(project_id),
+                "code": strategy_content,
+            }
+        )
+
+        print(f"Document {document_name} created/updated with integration strategy.")
+
+        session_store[session_id] = {
+            "step": 2,
+            "suggested_files": suggested_files,
+            "docReview_response": docReview_response,
+        }
+
+        formatted_docReview_response = format_response(docReview_response)
+        return {
+            "step": 1,
+            "message": "Doc review generated",
+            "output": formatted_docReview_response,
+        }
+
+    elif session_data["step"] == 2:
+        print("Entering Step 2: Generating Backend Endpoints...")
+        docReview_response = session_data.get("docReview_response", "")
+        sanitized_docReview_response = docReview_response.replace("{", "{{").replace(
+            "}", "}}"
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert travel API integration developer, code specialist",
+                ),
+                (
+                    "user",
+                    f"1. Review the API provider docs here: {request.docslink}, and the integration plan here: {sanitized_docReview_response}. Pay attention to what is needed in order to integrate with the providers content via API."
+                    "Figure out what the backend function should be to make the integration work. It will need to be a route."
+                    "Write the python script for the backend that will call the API provider based on their docs."
+                    "Ensure you handle allow all CORS."
+                    "Ensure you print the response."
+                    "Use a flask app that will host this backend locally on port 5000."
+                    "Include thorough error handling."
+                    "Only return 2 sections in the response: The code, the commands to install any required dependencies."
+                    "Comment out any non-code in your response.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "docslink": request.docslink,
+            "sanitized_docReview_response": sanitized_docReview_response,
             # "sanitised_github_file_contents": sanitised_github_file_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -229,6 +298,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "step": 3,
             "suggested_files": suggested_files,
             "backend_endpoint_response": backend_endpoint_response,
+            "sanitized_docReview_response": sanitized_docReview_response,
         }
 
         formatted_backend_response = format_response(backend_endpoint_response)
@@ -241,9 +311,13 @@ async def agent_invoke(request: AgentInvokeRequest):
     elif session_data["step"] == 3:
         print("Entering Step 3: Calculating required functions...")
         backend_endpoint_response = session_data.get("backend_endpoint_response", "")
+        sanitized_docReview_response = session_data.get(
+            "sanitized_docReview_response", ""
+        )
         sanitized_backend_endpoint_response = backend_endpoint_response.replace(
             "{", "{{"
         ).replace("}", "}}")
+        print(f"sanitized_docReview_response: {sanitized_docReview_response}")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -252,7 +326,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                 ),
                 (
                     "user",
-                    f"1. Review the API provider documentation at {request.docslink}\n. Learn how to successfully integrate to the API."
+                    f"1. Review the API provider documentation at {request.docslink}\n."
+                    f"2. See the required request payload here here: {sanitized_docReview_response}. This should be factored into the frontend function you create."
                     f"2. Review the backend endpoint we just created for this project here: {sanitized_backend_endpoint_response}."
                     "3. Reply to me only the required frontend function that will correctly call the backend endpoint to make the integration work. assume the backend will be hosted on on http://localhost:5000/"
                     "Only return React code, no explanations, no headers or non-code text. Use fetch instead of axios",
@@ -265,9 +340,10 @@ async def agent_invoke(request: AgentInvokeRequest):
             "chat_history": request.chat_history,
             "docslink": request.docslink,
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "sanitized_docReview_response": sanitized_docReview_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -296,6 +372,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "suggested_files": suggested_files,
             "frontend_function_response": frontend_function_response,
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "sanitized_docReview_response": sanitized_docReview_response,
         }
 
         formatted_agent_response = format_response(frontend_function_response)
@@ -314,6 +391,9 @@ async def agent_invoke(request: AgentInvokeRequest):
         sanitized_backend_endpoint_response = session_data.get(
             "sanitized_backend_endpoint_response", ""
         )
+        sanitized_docReview_response = session_data.get(
+            "sanitized_docReview_response", ""
+        )
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -324,8 +404,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "user",
                     "Context: We now need to create the frontend UI elements that will bring the API integration to life."
                     f"1. Review the frontend functions we have made for the integration to the backend {sanitised_frontend_function_response}, These need to be aligned to the UI you are generating now."
-                    f"2. Review the backend endpoints we have created too for more context: {sanitized_backend_endpoint_response}."
-                    "Generate the code for the UI components should be to make the integration work in the UI."
+                    f"2. Review the payload that has been defined and create the UI based on this too: {sanitized_docReview_response}."
+                    "Generate the code for the UI components should be to make the integration work in the UI, request fields and response fields if possible."
                     "Only return React code, no explanation.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -337,9 +417,10 @@ async def agent_invoke(request: AgentInvokeRequest):
             "suggested_files": suggested_files,
             "sanitised_frontend_function_response": sanitised_frontend_function_response,
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "sanitized_docReview_response": sanitized_docReview_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -404,7 +485,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=step_5_prompt,
         )
@@ -464,7 +545,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=step_6_prompt,
         )
@@ -536,9 +617,10 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "user",
                     f"1. Review the API content provider docs at {request.docslink}."
                     f"2. Review the code at {sanitised_frontend_generated_code}."
-                    f"3. Now turn it into working code."
-                    f"It should contain the frontend function(s) calling the backend function as defined, the ui components and any necessary boilerplate. Assume the component is called App."
-                    f"I need to be able to copy and paste this into my file and it should work, so React code only. Assume this frontend code is all in one file, and the backend code with the API call to the provider is in a seperate file.",
+                    "3. Now turn it into working code."
+                    "It should contain the frontend function(s) calling the backend function as defined, the ui components and any necessary boilerplate. Assume the component is called App."
+                    "I need to be able to copy and paste this into my file and it should work, so React code only. Assume this frontend code is all in one file, and the backend code with the API call to the provider is in a seperate file."
+                    "Comment out any non-code in your response.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -551,7 +633,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
