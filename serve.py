@@ -237,7 +237,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -571,7 +571,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=step_5_prompt,
         )
@@ -635,7 +635,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=step_6_prompt,
         )
@@ -712,7 +712,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Review the code at {sanitised_frontend_generated_code}."
                     "Remove any explanations and comments"
                     f"Add field validation based on the error response from the backend: {sanitized_capabilities_errorBody}."
-                    "Make the page stylistically attractive",
+                    "Add class or id to the fields so that can be referenced in the css styling document."
+                    "Ensure the css document 'trapi.css' is imported.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -753,6 +754,77 @@ async def agent_invoke(request: AgentInvokeRequest):
             "step": 7,
             "message": "Code review completed",
             "output": formatted_code_review_response,
+        }
+
+    elif session_data["step"] == 8:
+        print("Entering Step 8: Branding and styling...")
+        print(f"sanitised_github_file_contents: {sanitised_github_file_contents}")
+
+        if suggested_files:
+            for file_name in suggested_files:
+                if file_name.endswith(".js"):
+                    doc_ref = db.collection("projectFiles").document(file_name)
+                    doc = doc_ref.get()
+                    if doc.exists:
+                        frontend_generated_code = doc.to_dict().get("code", "")
+                    else:
+                        frontend_generated_code = (
+                            "No code found in the document for the '.js' file."
+                        )
+                    break
+        sanitised_frontend_generated_code = frontend_generated_code.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert travel API integration developer, your mission is to style the frontend code.",
+                ),
+                (
+                    "user",
+                    f"Review the new code at {sanitised_frontend_generated_code}."
+                    f"Review the existing page {sanitised_github_file_contents}."
+                    "Add inline styling to new code to matches the styling patterns from the existing page.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+            "sanitised_github_file_contents": sanitised_github_file_contents,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+        response = await agent_executor.ainvoke(context)
+        styling_response = response.get(
+            "output", "No impact analysis action performed."
+        )
+        print(f"styling_response: {styling_response}")
+
+        if (
+            suggested_files
+            and styling_response != "No impact analysis action performed."
+        ):
+            doc_ref.update({"code": styling_response})
+            print(f"Document for file: {file_name} updated with new code.")
+
+        session_store[session_id] = {
+            "step": 9,
+        }
+
+        formatted_styling_response = format_response(styling_response)
+        return {
+            "step": 8,
+            "message": "Code review completed",
+            "output": formatted_styling_response,
         }
 
 
