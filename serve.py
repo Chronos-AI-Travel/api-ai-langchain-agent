@@ -237,7 +237,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -317,7 +317,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -396,9 +396,11 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"See the required request payload object parameters: {sanitized_capabilities_requestBody}. Do not hardcode the data, expect to receive it from the input fields."
                     f"Structure the response according to the response data object: {sanitized_capabilities_responseBody}."
                     f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance}"
-                    "Return to me with only the required frontend functional component(s)."
-                    "Do not create the input fields."
+                    "Return to me with only the required frontend functional component."
                     "Create the required state fields."
+                    "Do not generate any UI elements such as input fields, lists, etc."
+                    "assumme that the UI elements will be created later"
+                    "Keep everything in one component"
                     "Assume the backend will be hosted on on http://localhost:5000/."
                     "Only return React code. Use fetch instead of axios. Be concise.",
                 ),
@@ -417,7 +419,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_capabilities_responseGuidance": sanitized_capabilities_responseGuidance,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -483,7 +485,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance}."
                     "We have already created the frontend function, these UI elements should align with that function and with the response guidance and data structures."
                     f"Frontend function: {sanitised_frontend_function_response}."
-                    "Return to me with only the required frontend UI elements."
+                    "Keep it all in a single component."
                     "Only return React code. Be concise.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -502,7 +504,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_capabilities_responseGuidance": sanitized_capabilities_responseGuidance,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -536,69 +538,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         }
 
     elif session_data["step"] == 5:
-        print("Entering Step 5: API Key section...")
-        sanitized_backend_endpoint_response = session_data.get(
-            "sanitized_backend_endpoint_response", ""
-        )
-        sanitised_frontend_function_response = session_data.get(
-            "sanitised_frontend_function_response", ""
-        )
-        sanitized_docReview_response = session_data.get(
-            "sanitized_docReview_response", ""
-        )
-
-        step_5_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are an expert travel API integration developer."
-                    f"1. Search the API providers link: {request.docslink} and learn their process for getting and using the API key."
-                    f"2. Provide the steps for me to get and add the API key in my project in a list format. I'm only concerned about the actual API key, nothing else.",
-                ),
-                (
-                    "user",
-                    "You are an expert travel API integration developer."
-                    f"1. Search the API providers link: {request.docslink} and learn their process for getting and using the API key."
-                    f"2. Provide the steps for me to get and add the API key in my project in a list format. I'm only concerned about the actual API key, nothing else."
-                    "Include full URLs if they are available for the steps.",
-                ),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ]
-        )
-        context = {
-            "input": "",
-            "chat_history": request.chat_history,
-            "docslink": request.docslink,
-        }
-        agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
-            tools=tools,
-            prompt=step_5_prompt,
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-        response = await agent_executor.ainvoke(context)
-        backend_apiKey_result = response.get(
-            "output", "No backend endpoint action performed."
-        )
-        print(f"Backend Endpoint result: {backend_apiKey_result}")
-
-        session_store[session_id] = {
-            "step": 6,
-            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
-            "sanitised_frontend_function_response": sanitised_frontend_function_response,
-            "sanitized_docReview_response": sanitized_docReview_response,
-        }
-
-        steps_list = backend_apiKey_result.split("\n")
-
-        return {
-            "step": 5,
-            "message": "API Key info sent",
-            "output": steps_list,
-        }
-
-    elif session_data["step"] == 6:
-        print("Entering Step 6: Creating Integration Tests...")
+        print("Entering Step 5: Creating Integration Tests...")
         sanitized_backend_endpoint_response = session_data.get(
             "sanitized_backend_endpoint_response", ""
         )
@@ -610,7 +550,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         )
         docslink = request.docslink
 
-        step_6_prompt = ChatPromptTemplate.from_messages(
+        prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
@@ -635,9 +575,9 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
-            prompt=step_6_prompt,
+            prompt=prompt,
         )
         agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
         response = await agent_executor.ainvoke(context)
@@ -662,7 +602,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         )
 
         session_store[session_id] = {
-            "step": 7,
+            "step": 6,
             "integration_tests_result": integration_tests_result,
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
             "sanitized_docReview_response": sanitized_docReview_response,
@@ -670,13 +610,13 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         formatted_integration_tests_response = format_response(integration_tests_result)
         return {
-            "step": 6,
+            "step": 5,
             "message": "Integration tests created",
             "output": formatted_integration_tests_response,
         }
 
-    elif session_data["step"] == 7:
-        print("Entering Step 7: Reviewing code for improvements...")
+    elif session_data["step"] == 6:
+        print("Entering Step 6: Reviewing code for improvements...")
         sanitized_backend_endpoint_response = session_data.get(
             "sanitized_backend_endpoint_response", ""
         )
@@ -711,9 +651,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "user",
                     f"Review the code at {sanitised_frontend_generated_code}."
                     "Remove any explanations and comments"
-                    f"Add field validation based on the error response from the backend: {sanitized_capabilities_errorBody}."
-                    "Add class or id to the fields so that can be referenced in the css styling document."
-                    "Ensure the css document 'trapi.css' is imported.",
+                    f"Add field validation based on the error response from the backend: {sanitized_capabilities_errorBody}.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -727,7 +665,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -746,18 +684,18 @@ async def agent_invoke(request: AgentInvokeRequest):
             print(f"Document for file: {file_name} updated with new code.")
 
         session_store[session_id] = {
-            "step": 8,
+            "step": 7,
         }
 
         formatted_code_review_response = format_response(code_review_response)
         return {
-            "step": 7,
+            "step": 6,
             "message": "Code review completed",
             "output": formatted_code_review_response,
         }
 
-    elif session_data["step"] == 8:
-        print("Entering Step 8: Branding and styling...")
+    elif session_data["step"] == 7:
+        print("Entering Step 7: Branding and styling...")
         print(f"sanitised_github_file_contents: {sanitised_github_file_contents}")
 
         if suggested_files:
@@ -798,7 +736,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitised_github_file_contents": sanitised_github_file_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -817,14 +755,155 @@ async def agent_invoke(request: AgentInvokeRequest):
             print(f"Document for file: {file_name} updated with new code.")
 
         session_store[session_id] = {
-            "step": 9,
+            "step": 8,
         }
 
         formatted_styling_response = format_response(styling_response)
         return {
-            "step": 8,
+            "step": 7,
             "message": "Code review completed",
             "output": formatted_styling_response,
+        }
+
+    elif session_data["step"] == 8:
+        print("Entering Step 8: Documentation...")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        sanitised_frontend_generated_code = session_data.get(
+            "sanitised_frontend_generated_code", ""
+        )
+        # sanitized_docReview_response = session_data.get(
+        #     "sanitized_docReview_response", ""
+        # )
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", "You are a travel API integration documentation expoert."),
+                (
+                    "user",
+                    "Write documentation for the following integration."
+                    f"1. Backend endpoint: {sanitized_backend_endpoint_response}."
+                    f"2. Frontend component: {sanitised_frontend_generated_code}."
+                    f"3. API Provider docs: {request.docslink}"
+                    "It should contain the following sections: Quick start guide, testing options (not that we have written tests at integration_tests.py), troubleshooting guide, support contact info, links to API provider docs.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "docslink": request.docslink,
+            "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+        response = await agent_executor.ainvoke(context)
+        documentation_result = response.get(
+            "output", "No documentation action performed."
+        )
+        print(f"Documentation result: {documentation_result}")
+
+        if capabilities_endPoints:
+            endpoint_for_filename = capabilities_endPoints[0].replace("/", "_")
+            documentation_file_name = (
+                f"TechnicalDocumentation_{endpoint_for_filename}.txt"
+            )
+        else:
+            documentation_file_name = "TechnicalDocumentation.txt"
+
+        documentation_file_name = documentation_file_name.replace(":", "_").replace(
+            "?", "_"
+        )
+
+        project_id = request.project
+        doc_ref = db.collection("projectFiles").document(documentation_file_name)
+        doc_ref.set(
+            {
+                "code": documentation_result,
+                "createdAt": datetime.now(),
+                "name": documentation_file_name,
+                "project": db.collection("projects").document(project_id),
+            }
+        )
+        print(f"Documentation saved as {documentation_file_name}")
+
+        session_store[session_id] = {
+            "step": 9,
+        }
+
+        formatted_documentation_result = format_response(documentation_result)
+        return {
+            "step": 8,
+            "message": "Documentation sent",
+            "output": formatted_documentation_result,
+        }
+
+    elif session_data["step"] == 9:
+        print("Entering Step 9: API Key section...")
+        # sanitized_backend_endpoint_response = session_data.get(
+        #     "sanitized_backend_endpoint_response", ""
+        # )
+        # sanitised_frontend_function_response = session_data.get(
+        #     "sanitised_frontend_function_response", ""
+        # )
+        # sanitized_docReview_response = session_data.get(
+        #     "sanitized_docReview_response", ""
+        # )
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert travel API integration developer."
+                    f"1. Search the API providers link: {request.docslink} and learn their process for getting and using the API key."
+                    f"2. Provide the steps for me to get and add the API key in my project in a list format. I'm only concerned about the actual API key, nothing else.",
+                ),
+                (
+                    "user",
+                    "You are an expert travel API integration developer."
+                    f"1. Search the API providers link: {request.docslink} and learn their process for getting and using the API key."
+                    f"2. Provide the steps for me to get and add the API key in my project in a list format. I'm only concerned about the actual API key, nothing else."
+                    "Include full URLs if they are available for the steps.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "docslink": request.docslink,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+        response = await agent_executor.ainvoke(context)
+        backend_apiKey_result = response.get(
+            "output", "No backend endpoint action performed."
+        )
+
+        session_store[session_id] = {
+            "step": 10,
+            # "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            # "sanitised_frontend_function_response": sanitised_frontend_function_response,
+            # "sanitized_docReview_response": sanitized_docReview_response,
+        }
+
+        steps_list = backend_apiKey_result.split("\n")
+
+        return {
+            "step": 9,
+            "message": "API Key info sent",
+            "output": steps_list,
         }
 
 
