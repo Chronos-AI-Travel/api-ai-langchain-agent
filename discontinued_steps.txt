@@ -1,0 +1,154 @@
+# elif session_data["step"] == 6:
+    #     print("Entering Step 6: Reviewing code for improvements...")
+    #     sanitized_backend_endpoint_response = session_data.get(
+    #         "sanitized_backend_endpoint_response", ""
+    #     )
+    #     sanitized_docReview_response = session_data.get(
+    #         "sanitized_docReview_response", ""
+    #     )
+
+    #     if suggested_files:
+    #         for file_name in suggested_files:
+    #             if file_name.endswith(".js"):
+    #                 doc_ref = db.collection("projectFiles").document(file_name)
+    #                 doc = doc_ref.get()
+    #                 if doc.exists:
+    #                     frontend_generated_code = doc.to_dict().get("code", "")
+    #                 else:
+    #                     frontend_generated_code = (
+    #                         "No code found in the document for the '.js' file."
+    #                     )
+    #                 break
+    #     sanitised_frontend_generated_code = frontend_generated_code.replace(
+    #         "{", "{{"
+    #     ).replace("}", "}}")
+    #     print(f"sanitised_frontend_generated_code: {sanitised_frontend_generated_code}")
+
+    #     prompt = ChatPromptTemplate.from_messages(
+    #         [
+    #             (
+    #                 "system",
+    #                 "You are an expert travel API integration developer, your mission is to generate a working react file.",
+    #             ),
+    #             (
+    #                 "user",
+    #                 f"Review the code at {sanitised_frontend_generated_code}."
+    #                 "Do not remove any existing code."
+    #                 "No dummy data."
+    #                 f"Add field validation and error logging where possible: {sanitized_capabilities_errorBody}."
+    #                 "Do not change anything besides field validation."
+    #                 "Ensure the code is ready for production use with all required React boilerplate and no hardcoding.",
+    #             ),
+    #             MessagesPlaceholder(variable_name="agent_scratchpad"),
+    #         ]
+    #     )
+    #     context = {
+    #         "input": "",
+    #         "chat_history": request.chat_history,
+    #         "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+    #         # "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+    #         # "docslink": request.docslink,
+    #         "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
+    #     }
+    #     agent = create_openai_functions_agent(
+    #         llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+    #         tools=tools,
+    #         prompt=prompt,
+    #     )
+    #     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+    #     response = await agent_executor.ainvoke(context)
+    #     code_review_response = response.get(
+    #         "output", "No impact analysis action performed."
+    #     )
+    #     print(f"Impact Analysis result: {code_review_response}")
+
+    #     if (
+    #         suggested_files
+    #         and code_review_response != "No impact analysis action performed."
+    #     ):
+    #         doc_ref.update({"code": code_review_response})
+    #         print(f"Document for file: {file_name} updated with new code.")
+
+    #     session_store[session_id] = {
+    #         "step": 7,
+    #     }
+
+    #     formatted_code_review_response = format_response(code_review_response)
+    #     return {
+    #         "step": 6,
+    #         "message": "Code review completed",
+    #         "output": formatted_code_review_response,
+    #     }
+
+    # elif session_data["step"] == 7:
+    #     print("Entering Step 7: Branding and styling...")
+    #     print(f"sanitised_github_file_contents: {sanitised_github_file_contents}")
+
+    #     if suggested_files:
+    #         for file_name in suggested_files:
+    #             if file_name.endswith(".js"):
+    #                 doc_ref = db.collection("projectFiles").document(file_name)
+    #                 doc = doc_ref.get()
+    #                 if doc.exists:
+    #                     frontend_generated_code = doc.to_dict().get("code", "")
+    #                 else:
+    #                     frontend_generated_code = (
+    #                         "No code found in the document for the '.js' file."
+    #                     )
+    #                 break
+    #     sanitised_frontend_generated_code = frontend_generated_code.replace(
+    #         "{", "{{"
+    #     ).replace("}", "}}")
+
+    #     prompt = ChatPromptTemplate.from_messages(
+    #         [
+    #             (
+    #                 "system",
+    #                 "You are an expert travel API integration developer, your mission is to style the frontend code.",
+    #             ),
+    #             (
+    #                 "user",
+    #                 f"Review the new code at {sanitised_frontend_generated_code}."
+    #                 f"Review the existing page {sanitised_github_file_contents}."
+    #                 "Add inline styling to new code to match the styling patterns from the existing page."
+    #                 "Do not remove any code."
+    #                 "No dummy data.",
+    #             ),
+    #             MessagesPlaceholder(variable_name="agent_scratchpad"),
+    #         ]
+    #     )
+    #     context = {
+    #         "input": "",
+    #         "chat_history": request.chat_history,
+    #         "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+    #         "sanitised_github_file_contents": sanitised_github_file_contents,
+    #     }
+    #     agent = create_openai_functions_agent(
+    #         llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+    #         tools=tools,
+    #         prompt=prompt,
+    #     )
+    #     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+    #     response = await agent_executor.ainvoke(context)
+    #     styling_response = response.get(
+    #         "output", "No impact analysis action performed."
+    #     )
+    #     print(f"styling_response: {styling_response}")
+
+    #     if (
+    #         suggested_files
+    #         and styling_response != "No impact analysis action performed."
+    #     ):
+    #         doc_ref.update({"code": styling_response})
+    #         print(f"Document for file: {file_name} updated with new code.")
+
+    #     session_store[session_id] = {
+    #         "step": 8,
+    #     }
+
+    #     formatted_styling_response = format_response(styling_response)
+    #     return {
+    #         "step": 7,
+    #         "message": "Code review completed",
+    #         "output": formatted_styling_response,
+    #     }
