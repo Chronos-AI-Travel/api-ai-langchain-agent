@@ -320,7 +320,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
