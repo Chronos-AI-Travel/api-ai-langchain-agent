@@ -257,6 +257,10 @@ async def agent_invoke(request: AgentInvokeRequest):
                     responseGuidance.replace("{", "{{").replace("}", "}}")
                     for responseGuidance in capabilities_responseGuidance
                 ]
+                sanitized_capabilities_requestGuidance = [
+                    responseGuidance.replace("{", "{{").replace("}", "}}")
+                    for responseGuidance in capabilities_responseGuidance
+                ]
 
     if session_data["step"] == 1:
         print("Entering Step 1: Starting doc review...")
@@ -450,7 +454,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Create for me frontend react UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers, dropdowns)."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"See the required request query parameters to know what input fields are needed: {sanitized_capabilities_requestBody}."
-                    f"Follow this guidance on how to use the request fields {sanitized_capabilities_responseGuidance}."
+                    f"Follow this guidance on how to use the request fields {sanitized_capabilities_requestGuidance}."
                     f"Integrate the new code into the existing code found here: {concatenated_sanitized_frontend_contents}"
                     "Integrate new code without altering or removing existing code."
                     "Avoid using placeholders that might suggest removing existing code."
@@ -465,10 +469,10 @@ async def agent_invoke(request: AgentInvokeRequest):
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "frontend_file_names": frontend_file_names,
+            # "frontend_file_names": frontend_file_names,
             "sanitized_capabilities_requestBody": sanitized_capabilities_requestBody,
-            "sanitized_capabilities_requestBody": sanitized_capabilities_responseGuidance,
-            "sanitized_frontend_contents_by_url": concatenated_sanitized_frontend_contents,
+            "sanitized_capabilities_requestGuidance": sanitized_capabilities_requestGuidance,
+            "concatenated_sanitized_frontend_contents": concatenated_sanitized_frontend_contents,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4", temperature=0),
@@ -553,7 +557,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
-                    "No dummy data."
+                    "No dummy data. Do not create the API call handler."
                     "Only return React code. Ensure the solution is complete and accurate.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -650,6 +654,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"See the UI fields we have here and write the API request-response handler to handle them: {sanitised_frontend_generated_code}."
                     f"Request query parameters: {sanitized_capabilities_requestBody}"
+                    f"Response structure: {sanitized_capabilities_responseBody}"
                     "Return to me the existing code, plus the API request-response handler component."
                     "Do not use any dummy data."
                     "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
@@ -666,8 +671,9 @@ async def agent_invoke(request: AgentInvokeRequest):
             "chat_history": request.chat_history,
             "sanitized_capabilities_requestBody": sanitized_capabilities_requestBody,
             "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
-            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            # "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
             "capabilities_routeName": capabilities_routeName,
+            "sanitized_capabilities_responseBody": sanitized_capabilities_responseBody,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4", temperature=0),
