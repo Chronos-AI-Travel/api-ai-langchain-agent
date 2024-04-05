@@ -136,9 +136,12 @@ class AgentInvokeRequest(BaseModel):
     docslink: str
     repo: str
     project: str
-    suggested_files: Optional[List[str]] = None
-    suggested_file_urls: Optional[List[str]] = None
-    suggested_file_paths: Optional[List[str]] = None
+    frontend_file_names: Optional[List[str]] = None
+    frontend_file_urls: Optional[List[str]] = None
+    frontend_file_paths: Optional[List[str]] = None
+    backend_file_names: Optional[List[str]] = None
+    backend_file_urls: Optional[List[str]] = None
+    backend_file_paths: Optional[List[str]] = None
     capabilityRefs: Optional[List[str]] = None
     chat_history: List[BaseMessage] = Field(
         ...,
@@ -156,16 +159,48 @@ async def agent_invoke(request: AgentInvokeRequest):
     session_data = session_store.get(session_id, {"step": 2})
     documents = create_loader(request.docslink)
     tools = create_tools(documents)
-    suggested_files = request.suggested_files
-    suggested_file_urls = request.suggested_file_urls
-    suggested_file_paths = request.suggested_file_paths
-    github_file_contents = await asyncio.gather(
-        *[fetch_file_content(url) for url in suggested_file_urls]
+
+    # Ensure all file-related lists are iterable
+    frontend_file_names = request.frontend_file_names or []
+    frontend_file_urls = request.frontend_file_urls or []
+    frontend_file_paths = request.frontend_file_paths or []
+
+    backend_file_names = request.backend_file_names or []
+    backend_file_urls = request.backend_file_urls or []
+    backend_file_paths = request.backend_file_paths or []
+
+    # Fetch and sanitize contents for frontend files
+    frontend_file_contents = await asyncio.gather(
+        *[fetch_file_content(url) for url in frontend_file_urls]
     )
-    concatenated_github_file_contents = "\n\n---\n\n".join(github_file_contents)
-    sanitised_github_file_contents = concatenated_github_file_contents.replace(
-        "{", "{{"
-    ).replace("}", "}}")
+    sanitized_frontend_contents_by_url = {
+        url: content.replace("{", "{{").replace("}", "}}")
+        for url, content in zip(frontend_file_urls, frontend_file_contents)
+    }
+
+    concatenated_sanitized_frontend_contents = "\n".join(
+        [
+            content.replace("{", "{{").replace("}", "}}")
+            for content in frontend_file_contents
+        ]
+    )
+
+    # Fetch and sanitize contents for backend files
+    backend_file_contents = await asyncio.gather(
+        *[fetch_file_content(url) for url in backend_file_urls]
+    )
+    sanitized_backend_contents_by_url = {
+        url: content.replace("{", "{{").replace("}", "}}")
+        for url, content in zip(backend_file_urls, backend_file_contents)
+    }
+
+    concatenated_sanitized_backend_contents = "\n".join(
+        [
+            content.replace("{", "{{").replace("}", "}}")
+            for content in backend_file_contents
+        ]
+    )
+
     db = firestore.client()
     capabilities_names = []
     capabilities_endPoints = []
@@ -286,6 +321,10 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 2:
         print("Entering Step 2: Generating Backend Route...")
+        print(
+            f"sanitized_backend_contents_by_url: {sanitized_backend_contents_by_url} "
+        )
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -303,6 +342,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Endpoint url: {capabilities_endPoints}."
                     f"Consider the error logging if required: \n{sanitized_capabilities_errorBody}."
                     "Handle the response."
+                    f"Integrate the new code into the existing code found here: {concatenated_sanitized_backend_contents}"
+                    "Integrate new code without altering or removing existing code."
                     "Ensure you handle allow all CORS."
                     "Use a flask app that will host this backend locally on port 5000."
                     "Add print statements for errors and the response."
@@ -318,6 +359,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_capabilities_headers": sanitized_capabilities_headers,
             "capabilities_routeName": capabilities_routeName,
             "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
+            "concatenated_sanitized_backend_contents": concatenated_sanitized_backend_contents,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
@@ -332,34 +374,42 @@ async def agent_invoke(request: AgentInvokeRequest):
         formatted_backend_response = format_response(backend_endpoint_response)
 
         file_created = False
-        for file_name in suggested_files:
+        for index, file_name in enumerate(backend_file_names):
             if file_name.endswith(".py"):
+                file_path = backend_file_paths[index]  # Example way to get the repoPath
                 doc_ref = db.collection("projectFiles").document(file_name)
-                # Use formatted_backend_response here
                 doc_ref.set(
                     {
                         "name": file_name,
                         "createdAt": datetime.now(),
                         "project": db.collection("projects").document(project_id),
                         "code": formatted_backend_response,  # Updated to use formatted response
+                        "repoPath": file_path,  # Include the repoPath
                     }
                 )
                 print(
-                    f"Document created/updated for file: {file_name} with backend endpoint code."
+                    f"Document created/updated for file: {file_name} with backend endpoint code and repoPath."
                 )
                 file_created = True
                 break
+
         if not file_created:
             default_file_name = "app.py"
+            default_file_path = (
+                "path/to/default/app.py"  # Example path for the default file
+            )
             doc_ref = db.collection("projectFiles").document(default_file_name)
-            # Use formatted_backend_response here as well
             doc_ref.set(
                 {
                     "name": default_file_name,
                     "createdAt": datetime.now(),
                     "project": db.collection("projects").document(project_id),
                     "code": formatted_backend_response,  # Updated to use formatted response
+                    "repoPath": default_file_path,  # Include the repoPath for the default file
                 }
+            )
+            print(
+                f"Default document created for file: {default_file_name} with backend endpoint code and repoPath."
             )
             print(
                 f"Default document created for file: {default_file_name} with backend endpoint code."
@@ -367,9 +417,8 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 3,
-            "suggested_files": suggested_files,
+            "backend_file_names": backend_file_names,
             "backend_endpoint_response": backend_endpoint_response,
-            # "sanitized_docReview_response": sanitized_docReview_response,
         }
 
         formatted_backend_response = format_response(backend_endpoint_response)
@@ -381,6 +430,11 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 3:
         print("Entering Step 3: Creating or Updating Request UI Elements...")
+        backend_endpoint_response = session_data.get("backend_endpoint_response", "")
+        sanitized_backend_endpoint_response = backend_endpoint_response.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+
         sanitized_backend_endpoint_response = session_data.get(
             "sanitized_backend_endpoint_response", ""
         )
@@ -393,11 +447,11 @@ async def agent_invoke(request: AgentInvokeRequest):
                 (
                     "user",
                     "// Start your response with a comment and end your response with a comment.\n"
-                    f"Create for me frontend react UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs)."
+                    f"Create for me frontend react UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers, dropdowns)."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"See the required request query parameters to know what input fields are needed: {sanitized_capabilities_requestBody}."
                     f"Follow this guidance on how to use the request fields {sanitized_capabilities_responseGuidance}."
-                    f"Integrate the new code into the existing code found here: {sanitised_github_file_contents}"
+                    f"Integrate the new code into the existing code found here: {concatenated_sanitized_frontend_contents}"
                     "Integrate new code without altering or removing existing code."
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
@@ -411,13 +465,13 @@ async def agent_invoke(request: AgentInvokeRequest):
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "suggested_files": suggested_files,
+            "frontend_file_names": frontend_file_names,
             "sanitized_capabilities_requestBody": sanitized_capabilities_requestBody,
             "sanitized_capabilities_requestBody": sanitized_capabilities_responseGuidance,
-            "sanitised_github_file_contents": sanitised_github_file_contents,
+            "sanitized_frontend_contents_by_url": concatenated_sanitized_frontend_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -426,8 +480,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         response_ui_response = response.get("output", "No UI update action performed.")
         formatted_ui_response = format_response(response_ui_response)
 
-        for index, file_name in enumerate(suggested_files):
-            file_path = suggested_file_paths[index]
+        for index, file_name in enumerate(frontend_file_names):
+            file_path = frontend_file_paths[index]
             doc_ref = db.collection("projectFiles").document(file_name)
             doc_ref.set(
                 {
@@ -444,7 +498,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 4,
-            "suggested_files": suggested_files,
+            "frontend_file_names": frontend_file_names,
             "response_ui_response": response_ui_response,
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
             # "sanitised_frontend_function_response": sanitised_frontend_function_response,
@@ -459,8 +513,8 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 4:
         print("Entering Step 4: Creating or Updating UI Response Elements...")
-        if suggested_files:
-            for file_name in suggested_files:
+        if frontend_file_names:
+            for file_name in frontend_file_names:
                 if file_name.endswith(".js"):
                     doc_ref = db.collection("projectFiles").document(file_name)
                     doc = doc_ref.get()
@@ -496,7 +550,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Structure the response according to the response data object: {sanitized_capabilities_responseBody}."
                     f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance}."
                     f"Integrate the new code into the existing code found here: {sanitised_frontend_generated_code}"
-                    "Integrate new code without altering or removing existing code, you must add to the existing code and response with the full code."
+                    "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
                     "No dummy data."
@@ -513,7 +567,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -522,8 +576,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         request_ui_response = response.get("output", "No UI update action performed.")
         formatted_request_ui_response = format_response(request_ui_response)
 
-        for index, file_name in enumerate(suggested_files):
-            file_path = suggested_file_paths[index]
+        for index, file_name in enumerate(frontend_file_names):
+            file_path = frontend_file_paths[index]
             doc_ref = db.collection("projectFiles").document(file_name)
             doc_ref.set(
                 {
@@ -540,7 +594,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 5,
-            "suggested_files": suggested_files,
+            "frontend_file_names": frontend_file_names,
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
             "formatted_request_ui_response": formatted_request_ui_response,
             "sanitized_response_ui_response": sanitized_response_ui_response,
@@ -554,8 +608,8 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 5:
         print("Entering Step 5: Calculating API request-response handler...")
-        if suggested_files:
-            for file_name in suggested_files:
+        if frontend_file_names:
+            for file_name in frontend_file_names:
                 if file_name.endswith(".js"):
                     doc_ref = db.collection("projectFiles").document(file_name)
                     doc = doc_ref.get()
@@ -601,6 +655,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
+                    "If nothing needs changing, then dont change anything and return the full existing code."
                     "Only return React code. Use Fetch not axios. Ensure the solution is complete and accurate.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -615,7 +670,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_routeName": capabilities_routeName,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -628,7 +683,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             frontend_function_response
         )
 
-        for file_name in suggested_files:
+        for file_name in frontend_file_names:
             doc_ref = db.collection("projectFiles").document(file_name)
             # Use formatted_frontend_function_response here
             doc_ref.update({"code": formatted_frontend_function_response})
@@ -638,7 +693,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 7,
-            "suggested_files": suggested_files,
+            "suggested_files": frontend_file_names,
             "frontend_function_response": frontend_function_response,  # Original response
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
@@ -654,8 +709,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         print(
             "Entering Step 6: Calculating Response part of API request-response handler..."
         )
-        if suggested_files:
-            for file_name in suggested_files:
+        if frontend_file_names:
+            for file_name in frontend_file_names:
                 if file_name.endswith(".js"):
                     doc_ref = db.collection("projectFiles").document(file_name)
                     doc = doc_ref.get()
@@ -716,7 +771,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_routeName": capabilities_routeName,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -729,7 +784,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             frontend_function_response
         )
 
-        for file_name in suggested_files:
+        for file_name in frontend_file_names:
             doc_ref = db.collection("projectFiles").document(file_name)
             # Use formatted_frontend_function_response here
             doc_ref.update({"code": formatted_frontend_function_response})
@@ -739,7 +794,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 7,
-            "suggested_files": suggested_files,
+            "frontend_file_names": frontend_file_names,
             "frontend_function_response": frontend_function_response,  # Original response
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
