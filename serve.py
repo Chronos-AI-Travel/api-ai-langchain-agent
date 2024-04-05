@@ -362,7 +362,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "concatenated_sanitized_backend_contents": concatenated_sanitized_backend_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -471,7 +471,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_frontend_contents_by_url": concatenated_sanitized_frontend_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -567,7 +567,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -670,7 +670,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_routeName": capabilities_routeName,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -771,7 +771,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_routeName": capabilities_routeName,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
             tools=tools,
             prompt=prompt,
         )
