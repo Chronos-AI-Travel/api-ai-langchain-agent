@@ -136,6 +136,8 @@ class AgentInvokeRequest(BaseModel):
     docslink: str
     repo: str
     project: str
+    frontendFramework: str
+    backendFramework: str
     frontend_file_names: Optional[List[str]] = None
     frontend_file_urls: Optional[List[str]] = None
     frontend_file_paths: Optional[List[str]] = None
@@ -211,6 +213,12 @@ async def agent_invoke(request: AgentInvokeRequest):
     capabilities_responseBody = []
     capabilities_responseGuidance = []
     capabilities_requestGuidance = []
+    sanitized_capabilities_headers = []
+    sanitized_capabilities_errorBody = []
+    sanitized_capabilities_requestBody = []
+    sanitized_capabilities_responseBody = []
+    sanitized_capabilities_responseGuidance = []
+    sanitized_capabilities_requestGuidance = []
 
     # Fetch capability data
     db = firestore.client()
@@ -312,7 +320,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         session_store[session_id] = {
             "step": 2,
-            "suggested_files": suggested_files,
+            # "suggested_files": suggested_files,
             "docReview_response": docReview_response,
         }
 
@@ -325,6 +333,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 2:
         print("Entering Step 2: Generating Backend Route...")
+        print(sanitized_capabilities_headers)
         print(
             f"sanitized_backend_contents_by_url: {sanitized_backend_contents_by_url} "
         )
@@ -333,7 +342,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    "You are an expert travel API integration developer, your mission is to generate a backend route in Python.",
+                    f"You are an expert travel API integration developer, your mission is to generate a backend route in {request.backendFramework}.",
                 ),
                 (
                     "user",
@@ -446,12 +455,12 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    "You are an expert travel API integration developer, your mission is to generate required frontend UI elements for the request in React.",
+                    f"You are an expert travel API integration developer, your mission is to generate required frontend UI elements for the request in {request.frontendFramework}.",
                 ),
                 (
                     "user",
                     "// Start your response with a comment and end your response with a comment.\n"
-                    f"Create for me frontend react UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers, dropdowns)."
+                    f"Create for me frontend {request.frontendFramework} UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers for date fields, dropdowns for select)."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"See the required request query parameters to know what input fields are needed: {sanitized_capabilities_requestBody}."
                     f"Follow this guidance on how to use the request fields {sanitized_capabilities_requestGuidance}."
@@ -461,7 +470,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Keep all frontend code in a single component."
                     "Create the required state fields."
                     "Create the required imports."
-                    "Only return React code. Ensure the solution is complete and accurate.",
+                    f"Only return {request.frontendFramework} code. Ensure the solution is complete and accurate.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -544,12 +553,12 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    "You are an expert travel API integration developer, your mission is to generate required frontend UI elements for the response in React.",
+                    f"You are an expert travel API integration developer, your mission is to generate required frontend UI elements for the response in {request.frontendFramework}.",
                 ),
                 (
                     "user",
                     "// Start your response with a comment and end your response with a comment.\n"
-                    f"Create for me frontend react UI elements for the response part of the API integration, such as form fields (e.g. text, tables, lists, card etc)."
+                    f"Create for me frontend {request.frontendFramework} UI elements for the response part of the API integration, such as form fields (e.g. text, tables, lists, card etc)."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"Structure the response according to the response data object: {sanitized_capabilities_responseBody}."
                     f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance}."
@@ -558,7 +567,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
                     "No dummy data. Do not create the API call handler."
-                    "Only return React code. Ensure the solution is complete and accurate.",
+                    f"Only return {request.frontendFramework} code. Ensure the solution is complete and accurate.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -643,12 +652,12 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    "You are an expert travel API integration developer, your mission is to generate the Request part of a frontend API request-response handler in React.",
+                    f"You are an expert travel API integration developer, your mission is to generate the Request part of a frontend API request-response handler in {request.frontendFramework}.",
                 ),
                 (
                     "user",
                     "// Note: Start your response with a comment (using '//') and also end your response with a comment (using '//').\n"
-                    f"Generate React code for the the frontend API request-response handler that will handle the request and response to the backend we have defined here: {sanitized_backend_endpoint_response}."
+                    f"Generate {request.frontendFramework} code for the the frontend API request-response handler that will handle the request and response to the backend we have defined here: {sanitized_backend_endpoint_response}."
                     f"Route name: {capabilities_routeName}"
                     "Assume the backend will be hosted on on http://localhost:5000/."
                     "Do not use the provider docs, only use the data provided below for this request:"
@@ -661,7 +670,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
                     "If nothing needs changing, then dont change anything and return the full existing code."
-                    "Only return React code. Use Fetch not axios. Ensure the solution is complete and accurate.",
+                    f"Only return {request.frontendFramework} code. Use Fetch not axios. Ensure the solution is complete and accurate.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -746,7 +755,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    "You are an expert travel API integration developer, your mission is to generate the Response part of a frontend API request-response handler in React.",
+                    f"You are an expert travel API integration developer, your mission is to generate the Response part of a frontend API request-response handler in {request.frontendFramework}.",
                 ),
                 (
                     "user",
@@ -759,7 +768,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Integrate new code without altering or removing existing code, you must add to the existing code and response with the full code."
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
-                    "Only return React code. Use fetch instead of axios. Be concise.",
+                    f"Only return {request.frontendFramework} code. Use fetch instead of axios. Be concise.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ]
@@ -833,7 +842,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                 ),
                 (
                     "user",
-                    "Your task now is to create backend in the same language as the provided backend code integration tests for the API provider based on the integration requirements identified in the previous steps."
+                    f"Your task now is to create backend in {request.backendFramework} for the API provider based on the integration requirements identified in the previous steps."
                     "Consider the functionalities proposed for integration and ensure the tests cover these functionalities effectively."
                     "Write the code for the integration tests, nothing else, literally."
                     f"\n\nIntegration Actions from Step 2:\n{sanitised_frontend_function_response}\n"
