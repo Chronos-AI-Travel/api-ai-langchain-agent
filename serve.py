@@ -155,6 +155,7 @@ class AgentInvokeRequest(BaseModel):
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
     """The Agent"""
+    print(f"request.capabilityRefs: {request.capabilityRefs}")
     session_id = request.session_id
     project_id = request.project
     db = firestore.client()
@@ -332,12 +333,6 @@ async def agent_invoke(request: AgentInvokeRequest):
         }
 
     elif session_data["step"] == 2:
-        print("Entering Step 2: Generating Backend Route...")
-        print(sanitized_capabilities_headers)
-        print(
-            f"sanitized_backend_contents_by_url: {sanitized_backend_contents_by_url} "
-        )
-
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -358,7 +353,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Integrate the new code into the existing code found here: {concatenated_sanitized_backend_contents}"
                     "Integrate new code without altering or removing existing code."
                     "Ensure you handle allow all CORS."
-                    "Use a flask app that will host this backend locally on port 5000."
+                    f"Use a {request.backendFramework} app that will host this backend locally on port 5000."
                     "Add print statements for errors and the response."
                     "Be concise, only respond with the code.",
                 ),
