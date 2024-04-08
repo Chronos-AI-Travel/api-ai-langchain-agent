@@ -155,7 +155,6 @@ class AgentInvokeRequest(BaseModel):
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
     """The Agent"""
-    print(f"request.capabilityRefs: {request.capabilityRefs}")
     session_id = request.session_id
     project_id = request.project
     db = firestore.client()
@@ -370,7 +369,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "concatenated_sanitized_backend_contents": concatenated_sanitized_backend_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -457,8 +456,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "// Start your response with a comment and end your response with a comment.\n"
                     f"Create for me frontend {request.frontendFramework} UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers for date fields, dropdowns for select)."
                     "Do not use the provider docs, only use the data provided below for this request:"
-                    f"See the required request query parameters to know what input fields are needed: {sanitized_capabilities_requestBody}."
-                    f"Follow this guidance on how to use the request fields {sanitized_capabilities_requestGuidance}."
+                    f"See the required request query parameters to know what input fields are available: {sanitized_capabilities_requestBody}."
+                    f"Follow this guidance on how and which to use the request fields {sanitized_capabilities_requestGuidance}."
                     f"Integrate the new code into the existing code found here: {concatenated_sanitized_frontend_contents}"
                     "Integrate new code without altering or removing existing code."
                     "Avoid using placeholders that might suggest removing existing code."
