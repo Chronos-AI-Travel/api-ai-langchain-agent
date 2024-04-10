@@ -145,6 +145,8 @@ class AgentInvokeRequest(BaseModel):
     backend_file_urls: Optional[List[str]] = None
     backend_file_paths: Optional[List[str]] = None
     capabilityRefs: Optional[List[str]] = None
+    userRequestFields: Optional[List[str]] = None
+    userResponseFields: Optional[List[str]] = None
     chat_history: List[BaseMessage] = Field(
         ...,
         extra={"widget": {"type": "chat", "input": "location"}},
@@ -166,12 +168,9 @@ async def agent_invoke(request: AgentInvokeRequest):
     frontend_file_names = request.frontend_file_names or []
     frontend_file_urls = request.frontend_file_urls or []
     frontend_file_paths = request.frontend_file_paths or []
-
     backend_file_names = request.backend_file_names or []
     backend_file_urls = request.backend_file_urls or []
     backend_file_paths = request.backend_file_paths or []
-
-    # Fetch and sanitize contents for frontend files
     frontend_file_contents = await asyncio.gather(
         *[fetch_file_content(url) for url in frontend_file_urls]
     )
@@ -179,7 +178,6 @@ async def agent_invoke(request: AgentInvokeRequest):
         url: content.replace("{", "{{").replace("}", "}}")
         for url, content in zip(frontend_file_urls, frontend_file_contents)
     }
-
     concatenated_sanitized_frontend_contents = "\n".join(
         [
             content.replace("{", "{{").replace("}", "}}")
@@ -195,7 +193,6 @@ async def agent_invoke(request: AgentInvokeRequest):
         url: content.replace("{", "{{").replace("}", "}}")
         for url, content in zip(backend_file_urls, backend_file_contents)
     }
-
     concatenated_sanitized_backend_contents = "\n".join(
         [
             content.replace("{", "{{").replace("}", "}}")
@@ -266,8 +263,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     for responseGuidance in capabilities_responseGuidance
                 ]
                 sanitized_capabilities_requestGuidance = [
-                    responseGuidance.replace("{", "{{").replace("}", "}}")
-                    for responseGuidance in capabilities_responseGuidance
+                    requestGuidance.replace("{", "{{").replace("}", "}}")
+                    for requestGuidance in capabilities_requestGuidance
                 ]
 
     if session_data["step"] == 1:
@@ -332,6 +329,9 @@ async def agent_invoke(request: AgentInvokeRequest):
         }
 
     elif session_data["step"] == 2:
+        print(f"capabilities_routeName: {capabilities_routeName}")
+        print(f"sanitized_capabilities_headers: {sanitized_capabilities_headers}")
+        print(f"capabilities_endPoints: {capabilities_endPoints}")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -367,6 +367,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_routeName": capabilities_routeName,
             "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
             "concatenated_sanitized_backend_contents": concatenated_sanitized_backend_contents,
+            "request.backendFramework": request.backendFramework,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
@@ -437,6 +438,10 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 3:
         print("Entering Step 3: Creating or Updating Request UI Elements...")
+        print(f"request.userRequestFields: {request.userRequestFields}")
+        print(
+            f"sanitized_capabilities_requestGuidance: {sanitized_capabilities_requestGuidance}"
+        )
         backend_endpoint_response = session_data.get("backend_endpoint_response", "")
         sanitized_backend_endpoint_response = backend_endpoint_response.replace(
             "{", "{{"
@@ -449,21 +454,21 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    f"You are an expert travel API integration developer, your mission is to generate required frontend UI elements for the request in {request.frontendFramework}.",
+                    f"You are an expert {request.frontendFramework} developer. Your task is to generate UI elements for constructing an API request payload.",
                 ),
                 (
                     "user",
                     "// Start your response with a comment and end your response with a comment.\n"
-                    f"Create for me frontend {request.frontendFramework} UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers for date fields, dropdowns for select)."
+                    f"Create {request.frontendFramework} UI elements for the request part of the API integration, such as form fields (e.g. buttons, text fields, inputs, date pickers for date fields, dropdowns for select)."
                     "Do not use the provider docs, only use the data provided below for this request:"
-                    f"See the required request query parameters to know what input fields are available: {sanitized_capabilities_requestBody}."
-                    f"Follow this guidance on how and which to use the request fields {sanitized_capabilities_requestGuidance}."
-                    f"Integrate the new code into the existing code found here: {concatenated_sanitized_frontend_contents}"
-                    "Integrate new code without altering or removing existing code."
+                    f"Constructing the payload according to the API's expected structure: {sanitized_capabilities_requestBody}."
+                    f"Create only the following request fields: {sanitized_capabilities_requestGuidance} {request.userRequestFields}."
+                    f"Integrate the new code into the existing code, without altering or removing existing code, found here: {concatenated_sanitized_frontend_contents}, "
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
                     "Create the required state fields."
-                    "Create the required imports."
+                    "Minimise the need for package installations."
+                    "Keep existing imports and create any required imports."
                     f"Only return {request.frontendFramework} code. Ensure the solution is complete and accurate.",
                 ),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -547,7 +552,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    f"You are an expert travel API integration developer, your mission is to generate required frontend UI elements for the response in {request.frontendFramework}.",
+                    f"You are an expert {request.frontendFramework} developer. Your task now is to create UI elements for displaying API response data.",
                 ),
                 (
                     "user",
@@ -646,7 +651,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             [
                 (
                     "system",
-                    f"You are an expert travel API integration developer, your mission is to generate the Request part of a frontend API request-response handler in {request.frontendFramework}.",
+                    f"You are an expert {request.frontendFramework} developer. Your final task is to integrate the UI elements with an API request-response handler.",
                 ),
                 (
                     "user",
@@ -674,7 +679,6 @@ async def agent_invoke(request: AgentInvokeRequest):
             "chat_history": request.chat_history,
             "sanitized_capabilities_requestBody": sanitized_capabilities_requestBody,
             "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
-            # "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
             "capabilities_routeName": capabilities_routeName,
             "sanitized_capabilities_responseBody": sanitized_capabilities_responseBody,
         }
