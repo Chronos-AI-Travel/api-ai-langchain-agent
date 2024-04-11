@@ -525,6 +525,9 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 4:
         print("Entering Step 4: Creating or Updating UI Response Elements...")
+        print(
+                f"request.userResponseFields: {request.userResponseFields}"
+            )
         if frontend_file_names:
             for file_name in frontend_file_names:
                 if file_name.endswith(".js"):
@@ -560,7 +563,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Create for me frontend {request.frontendFramework} UI elements for the response part of the API integration, such as form fields (e.g. text, tables, lists, card etc)."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"Structure the response according to the response data object: {sanitized_capabilities_responseBody}."
-                    f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance}."
+                    f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance} also display this data: {request.userResponseFields}."
                     f"Integrate the new code into the existing code found here: {sanitised_frontend_generated_code}"
                     "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
                     "Avoid using placeholders that might suggest removing existing code."
@@ -857,7 +860,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -931,7 +934,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -1004,7 +1007,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "docslink": request.docslink,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
             tools=tools,
             prompt=prompt,
         )
