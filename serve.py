@@ -204,6 +204,7 @@ async def agent_invoke(request: AgentInvokeRequest):
     capabilities_names = []
     capabilities_endPoints = []
     capabilities_headers = []
+    capabilities_method = []
     capabilities_routeName = []
     capabilities_errorBody = []
     capabilities_requestBody = []
@@ -229,6 +230,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                 capabilities_endPoints.append(doc_data.get("endPoint", "No endPoint"))
                 capabilities_headers.append(doc_data.get("headers", "No headers"))
                 capabilities_routeName.append(doc_data.get("routeName", "No routeName"))
+                capabilities_method.append(doc_data.get("method", "No method"))
                 capabilities_errorBody.append(doc_data.get("errorBody", "No errorBody"))
                 capabilities_requestBody.append(
                     doc_data.get("requestBody", "No requestBody")
@@ -332,6 +334,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         print(f"capabilities_routeName: {capabilities_routeName}")
         print(f"sanitized_capabilities_headers: {sanitized_capabilities_headers}")
         print(f"capabilities_endPoints: {capabilities_endPoints}")
+        print(f"capabilities_method: {capabilities_method}")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -345,6 +348,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"Route name: {capabilities_routeName}."
                     f"Do not hardcode the payload."
+                    f"Method: {capabilities_method}."
                     f"Headers: {sanitized_capabilities_headers}."
                     f"Endpoint url: {capabilities_endPoints}."
                     f"Consider the error logging if required: \n{sanitized_capabilities_errorBody}."
@@ -525,9 +529,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 4:
         print("Entering Step 4: Creating or Updating UI Response Elements...")
-        print(
-                f"request.userResponseFields: {request.userResponseFields}"
-            )
+        print(f"request.userResponseFields: {request.userResponseFields}")
         if frontend_file_names:
             for file_name in frontend_file_names:
                 if file_name.endswith(".js"):
@@ -613,6 +615,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
             "formatted_request_ui_response": formatted_request_ui_response,
             "sanitized_response_ui_response": sanitized_response_ui_response,
+            "sanitized_capabilities_responseBody": sanitized_capabilities_responseBody,
         }
 
         return {
@@ -661,6 +664,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "// Note: Start your response with a comment (using '//') and also end your response with a comment (using '//').\n"
                     f"Generate {request.frontendFramework} code for the the frontend API request-response handler that will handle the request and response to the backend we have defined here: {sanitized_backend_endpoint_response}."
                     f"Route name: {capabilities_routeName}"
+                    f"Method: {capabilities_method}"
                     "Assume the backend will be hosted on on http://localhost:5000/."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"See the UI fields we have here and write the API request-response handler to handle them: {sanitised_frontend_generated_code}."
@@ -722,9 +726,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         }
 
     elif session_data["step"] == 6:
-        print(
-            "Entering Step 6: Calculating Response part of API request-response handler..."
-        )
+        print("Entering Step 6: Calculating API request-response handler...")
         if frontend_file_names:
             for file_name in frontend_file_names:
                 if file_name.endswith(".js"):
@@ -762,8 +764,8 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "user",
                     "// Note: Start your response with a comment (using '//') and also end your response with a comment (using '//').\n"
                     "Do not use the provider docs, only use the data provided below for this code:"
-                    f"See the UI fields in the existing code we have here and write the Response part of the API request-response handler to handle them: {sanitised_frontend_generated_code}."
-                    f"Response query parameters: {capabilities_responseBody}."
+                    f"See the the existing code we have here and write the API request-response handler to handle the fields: {sanitised_frontend_generated_code}."
+                    f"Structure it according to the response object structure: {capabilities_responseBody}."
                     "Return to me the code updated with the frontend API request-response handler component."
                     "Do not use any dummy data."
                     "Integrate new code without altering or removing existing code, you must add to the existing code and response with the full code."
@@ -843,6 +845,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                 ),
                 (
                     "user",
+                    "// Note: Start your response with a comment (using '//') and also end your response with a comment (using '//').\n"
                     f"Your task now is to create backend in {request.backendFramework} for the API provider based on the integration requirements identified in the previous steps."
                     "Consider the functionalities proposed for integration and ensure the tests cover these functionalities effectively."
                     "Write the code for the integration tests, nothing else, literally."
