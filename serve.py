@@ -129,8 +129,31 @@ def create_document_for_file(file_name, file_content, llm_response):
     print(f"Document created for file: {file_name} with LLM response")
 
 
-# Schema
+# Schemas
 class AgentInvokeRequest(BaseModel):
+    input: str = ""
+    session_id: str
+    docslink: str
+    repo: str
+    project: str
+    frontendFramework: str
+    backendFramework: str
+    frontend_file_names: Optional[List[str]] = None
+    frontend_file_urls: Optional[List[str]] = None
+    frontend_file_paths: Optional[List[str]] = None
+    backend_file_names: Optional[List[str]] = None
+    backend_file_urls: Optional[List[str]] = None
+    backend_file_paths: Optional[List[str]] = None
+    capabilityRefs: Optional[List[str]] = None
+    userRequestFields: Optional[List[str]] = None
+    userResponseFields: Optional[List[str]] = None
+    chat_history: List[BaseMessage] = Field(
+        ...,
+        extra={"widget": {"type": "chat", "input": "location"}},
+    )
+
+
+class AggregationRequest(BaseModel):
     input: str = ""
     session_id: str
     docslink: str
@@ -156,7 +179,7 @@ class AgentInvokeRequest(BaseModel):
 # Agent Route
 @app.post("/agent/invoke")
 async def agent_invoke(request: AgentInvokeRequest):
-    """The Agent"""
+    """The Integration Agent"""
     session_id = request.session_id
     project_id = request.project
     db = firestore.client()
@@ -1028,6 +1051,603 @@ async def agent_invoke(request: AgentInvokeRequest):
 
         return {
             "step": 9,
+            "message": "API Key info sent",
+            "output": steps_list,
+        }
+
+
+# Agent Route
+@app.post("/agent/aggregation")
+async def agent_aggregation(request: AggregationRequest):
+    """The Aggregation Agent"""
+    session_id = request.session_id
+    project_id = request.project
+    db = firestore.client()
+    session_data = session_store.get(session_id, {"step": 1})
+    documents = create_loader(request.docslink)
+    tools = create_tools(documents)
+
+    # Ensure all file-related lists are iterable
+    frontend_file_names = request.frontend_file_names or []
+    frontend_file_urls = request.frontend_file_urls or []
+    frontend_file_paths = request.frontend_file_paths or []
+    backend_file_names = request.backend_file_names or []
+    backend_file_urls = request.backend_file_urls or []
+    backend_file_paths = request.backend_file_paths or []
+    frontend_file_contents = await asyncio.gather(
+        *[fetch_file_content(url) for url in frontend_file_urls]
+    )
+    sanitized_frontend_contents_by_url = {
+        url: content.replace("{", "{{").replace("}", "}}")
+        for url, content in zip(frontend_file_urls, frontend_file_contents)
+    }
+    concatenated_sanitized_frontend_contents = "\n".join(
+        [
+            content.replace("{", "{{").replace("}", "}}")
+            for content in frontend_file_contents
+        ]
+    )
+
+    # Fetch and sanitize contents for backend files
+    backend_file_contents = await asyncio.gather(
+        *[fetch_file_content(url) for url in backend_file_urls]
+    )
+    sanitized_backend_contents_by_url = {
+        url: content.replace("{", "{{").replace("}", "}}")
+        for url, content in zip(backend_file_urls, backend_file_contents)
+    }
+    concatenated_sanitized_backend_contents = "\n".join(
+        [
+            content.replace("{", "{{").replace("}", "}}")
+            for content in backend_file_contents
+        ]
+    )
+
+    db = firestore.client()
+    capabilities_names = []
+    capabilities_endPoints = []
+    capabilities_headers = []
+    capabilities_method = []
+    capabilities_routeName = []
+    capabilities_errorBody = []
+    capabilities_requestBody = []
+    capabilities_responseBody = []
+    capabilities_responseGuidance = []
+    capabilities_requestGuidance = []
+    sanitized_capabilities_headers = []
+    sanitized_capabilities_errorBody = []
+    sanitized_capabilities_requestBody = []
+    sanitized_capabilities_responseBody = []
+    sanitized_capabilities_responseGuidance = []
+    sanitized_capabilities_requestGuidance = []
+
+    # Fetch capability data
+    db = firestore.client()
+    if request.capabilityRefs:
+        capability_docs = await asyncio.gather(
+            *[fetch_capability_data(db, path) for path in request.capabilityRefs]
+        )
+        for doc_data in capability_docs:
+            if doc_data:
+                capabilities_names.append(doc_data.get("name", "No name"))
+                capabilities_endPoints.append(doc_data.get("endPoint", "No endPoint"))
+                capabilities_headers.append(doc_data.get("headers", "No headers"))
+                capabilities_routeName.append(doc_data.get("routeName", "No routeName"))
+                capabilities_method.append(doc_data.get("method", "No method"))
+                capabilities_errorBody.append(doc_data.get("errorBody", "No errorBody"))
+                capabilities_requestBody.append(
+                    doc_data.get("requestBody", "No requestBody")
+                )
+                capabilities_responseBody.append(
+                    doc_data.get("responseBody", "No responseBody")
+                )
+                capabilities_responseGuidance.append(
+                    doc_data.get("responseGuidance", "No responseGuidance")
+                )
+                capabilities_requestGuidance.append(
+                    doc_data.get("requestGuidance", "No requestGuidance")
+                )
+                sanitized_capabilities_errorBody = [
+                    errorBody.replace("{", "{{").replace("}", "}}")
+                    for errorBody in capabilities_errorBody
+                ]
+                sanitized_capabilities_headers = [
+                    headers.replace("{", "{{").replace("}", "}}")
+                    for headers in capabilities_headers
+                ]
+                sanitized_capabilities_requestBody = [
+                    requestBody.replace("{", "{{").replace("}", "}}")
+                    for requestBody in capabilities_requestBody
+                ]
+                sanitized_capabilities_responseBody = [
+                    responseBody.replace("{", "{{").replace("}", "}}")
+                    for responseBody in capabilities_responseBody
+                ]
+                sanitized_capabilities_responseGuidance = [
+                    responseGuidance.replace("{", "{{").replace("}", "}}")
+                    for responseGuidance in capabilities_responseGuidance
+                ]
+                sanitized_capabilities_requestGuidance = [
+                    requestGuidance.replace("{", "{{").replace("}", "}}")
+                    for requestGuidance in capabilities_requestGuidance
+                ]
+
+    if session_data["step"] == 1:
+        print("Entering Step 1: Add new routes...")
+        print(f"capabilities_routeName: {capabilities_routeName}")
+        print(f"sanitized_capabilities_headers: {sanitized_capabilities_headers}")
+        print(f"capabilities_endPoints: {capabilities_endPoints}")
+        print(f"capabilities_method: {capabilities_method}")
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    f"You are an expert travel API integration developer, your mission is to generate a backend route in {request.backendFramework}.",
+                ),
+                (
+                    "user",
+                    "# Start your response with a comment and end your response with a comment.\n"
+                    "Create a backend route that acts as an API proxy."
+                    "Do not use the provider docs, only use the data provided below for this request:"
+                    f"Route name: {capabilities_routeName}."
+                    f"Do not hardcode the payload."
+                    f"Method: {capabilities_method}."
+                    f"Headers: {sanitized_capabilities_headers}."
+                    f"Endpoint url: {capabilities_endPoints}."
+                    f"Consider the error logging if required: \n{sanitized_capabilities_errorBody}."
+                    "Handle the response."
+                    f"Integrate the new code into the existing code found here: {concatenated_sanitized_backend_contents}"
+                    "Integrate new code without altering or removing existing code."
+                    "Ensure you handle allow all CORS."
+                    f"Use a {request.backendFramework} app that will host this backend locally on port 5000."
+                    "Add print statements for errors and the response."
+                    "Be concise, only respond with the code.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "capabilities_endPoints": capabilities_endPoints,
+            "sanitized_capabilities_headers": sanitized_capabilities_headers,
+            "capabilities_routeName": capabilities_routeName,
+            "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
+            "concatenated_sanitized_backend_contents": concatenated_sanitized_backend_contents,
+            "request.backendFramework": request.backendFramework,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        response = await agent_executor.ainvoke(context)
+        backend_endpoint_response = response.get(
+            "output", "No backend endpoint action performed."
+        )
+        formatted_backend_response = format_response(backend_endpoint_response)
+
+        # Assuming backend_file_names and backend_file_paths are provided and non-empty
+        file_name = backend_file_names[0]  # Use the first provided backend file name
+        file_path = backend_file_paths[0]  # Use the corresponding file path
+
+        # Create or update the document in the database
+        doc_ref = db.collection("projectFiles").document(file_name)
+        doc_ref.set(
+            {
+                "name": file_name,
+                "createdAt": datetime.now(),
+                "project": db.collection("projects").document(project_id),
+                "code": formatted_backend_response,  # Use the formatted response
+                "repoPath": file_path,  # Include the repository path
+            }
+        )
+
+        # Log the action to the console
+        print(
+            f"Document created/updated for file: {file_name} with backend endpoint code and repoPath."
+        )
+
+        session_store[session_id] = {
+            "step": 2,
+            "backend_file_names": backend_file_names,
+            "backend_endpoint_response": backend_endpoint_response,
+            "file_name": file_name,
+        }
+
+        formatted_backend_response = format_response(backend_endpoint_response)
+        return {
+            "step": 1,
+            "message": "Backend endpoints generated",
+            "output": formatted_backend_response,
+        }
+
+    elif session_data["step"] == 2:
+        print("Entering Step 2: Aggregating content...")
+
+        file_name = session_data.get("file_name", None)
+        print(f"file_name: {file_name}")
+
+        if file_name:
+            doc_ref = db.collection("projectFiles").document(file_name)
+            doc = doc_ref.get()
+            if doc.exists:
+                backend_generated_code = doc.to_dict().get("code", "")
+            else:
+                backend_generated_code = (
+                    "No code found in the document for the specified file."
+                )
+        else:
+            backend_generated_code = "File name not found in session data."
+
+        sanitized_backend_generated_code = backend_generated_code.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    f"You are an expert {request.backendFramework} developer. Your task is to aggregate routes of matching travel verticals",
+                ),
+                (
+                    "user",
+                    "Examples of matching verticals: Flights and flights, hotels and hotels, rail and rail."
+                    "// Start your response with a comment and end your response with a comment.\n"
+                    "If an aggregation function DOES already exist for the vertical for which we have added a new proxy API route at the bottom of the file, THEN Update it to include the new route new Route."
+                    "If an aggregation function DOES NOT exist for the vertical for which we have added a new proxy API route at the bottom of the file, THEN create a new one it to include the new route and the existing route which matches the vertical of the new route."
+                    "If There are no matching or similar verticals in the backend code, then tell me that."
+                    "Do not use the provider docs, only use the data provided for this request:"
+                    f"Integrate the new code into the existing code, without altering or removing existing code, which is here:{sanitized_backend_generated_code}"
+                    "Avoid using placeholders that might suggest removing existing code."
+                    f"Only return {request.backendFramework} code. Ensure the solution is complete and accurate.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "sanitized_backend_generated_code": sanitized_backend_generated_code
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        response = await agent_executor.ainvoke(context)
+        response_ui_response = response.get("output", "No UI update action performed.")
+        formatted_ui_response = format_response(response_ui_response)
+
+        for index, file_name in enumerate(frontend_file_names):
+            file_path = frontend_file_paths[index]
+            doc_ref = db.collection("projectFiles").document(file_name)
+            doc_ref.set(
+                {
+                    "name": file_name,
+                    "createdAt": datetime.now(),
+                    "project": db.collection("projects").document(project_id),
+                    "code": formatted_ui_response,
+                    "repoPath": file_path,
+                }
+            )
+            print(
+                f"Document created/updated for file: {file_name} with path: {file_path} and formatted UI response."
+            )
+
+        session_store[session_id] = {
+            "step": 3,
+        }
+
+        return {
+            "step": 2,
+            "message": "UI components created or updated",
+            "output": formatted_ui_response,
+        }
+
+    elif session_data["step"] == 3:
+        print("Entering Step 3: Normalising data...")
+        print(f"request.userResponseFields: {request.userResponseFields}")
+        if frontend_file_names:
+            for file_name in frontend_file_names:
+                if file_name.endswith(".js"):
+                    doc_ref = db.collection("projectFiles").document(file_name)
+                    doc = doc_ref.get()
+                    if doc.exists:
+                        frontend_generated_code = doc.to_dict().get("code", "")
+                    else:
+                        frontend_generated_code = (
+                            "No code found in the document for the '.js' file."
+                        )
+                    break
+        sanitised_frontend_generated_code = frontend_generated_code.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        response_ui_response = session_data.get("response_ui_response", "")
+        sanitized_response_ui_response = response_ui_response.replace(
+            "{", "{{"
+        ).replace("}", "}}")
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    f"You are an expert {request.frontendFramework} developer. Your task now is to create UI elements for displaying API response data.",
+                ),
+                (
+                    "user",
+                    "// Start your response with a comment and end your response with a comment.\n"
+                    f"Create for me frontend {request.frontendFramework} UI elements for the response part of the API integration, such as form fields (e.g. text, tables, lists, card etc)."
+                    "Do not use the provider docs, only use the data provided below for this request:"
+                    f"Structure the response according to the response data object: {sanitized_capabilities_responseBody}."
+                    f"Follow this advice to structure the response properly: {sanitized_capabilities_responseGuidance} also display this data: {request.userResponseFields}."
+                    f"Integrate the new code into the existing code found here: {sanitised_frontend_generated_code}"
+                    "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
+                    "Avoid using placeholders that might suggest removing existing code."
+                    "Keep all frontend code in a single component."
+                    "No dummy data. Do not create the API call handler."
+                    f"Only return {request.frontendFramework} code. Ensure the solution is complete and accurate.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "sanitized_capabilities_responseBody": sanitized_capabilities_responseBody,
+            "sanitized_capabilities_responseGuidance": sanitized_capabilities_responseGuidance,
+            "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        response = await agent_executor.ainvoke(context)
+        request_ui_response = response.get("output", "No UI update action performed.")
+        formatted_request_ui_response = format_response(request_ui_response)
+
+        for index, file_name in enumerate(frontend_file_names):
+            file_path = frontend_file_paths[index]
+            doc_ref = db.collection("projectFiles").document(file_name)
+            doc_ref.set(
+                {
+                    "name": file_name,
+                    "createdAt": datetime.now(),
+                    "project": db.collection("projects").document(project_id),
+                    "code": formatted_request_ui_response,
+                    "repoPath": file_path,
+                }
+            )
+            print(
+                f"Document created/updated for file: {file_name} with path: {file_path} and formatted UI response."
+            )
+
+        session_store[session_id] = {
+            "step": 4,
+            "frontend_file_names": frontend_file_names,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "formatted_request_ui_response": formatted_request_ui_response,
+            "sanitized_response_ui_response": sanitized_response_ui_response,
+            "sanitized_capabilities_responseBody": sanitized_capabilities_responseBody,
+        }
+
+        return {
+            "step": 3,
+            "message": "UI Response components created or updated",
+            "output": formatted_request_ui_response,
+        }
+
+    elif session_data["step"] == 4:
+        print("Entering Step 4: Writing test scripts...")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        sanitised_frontend_function_response = session_data.get(
+            "sanitised_frontend_function_response", ""
+        )
+        sanitized_docReview_response = session_data.get(
+            "sanitized_docReview_response", ""
+        )
+        docslink = request.docslink
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert Travel API Integrator focusing on quality assurance. ",
+                ),
+                (
+                    "user",
+                    "// Note: Start your response with a comment (using '//') and also end your response with a comment (using '//').\n"
+                    f"Your task now is to create backend in {request.backendFramework} for the API provider based on the integration requirements identified in the previous steps."
+                    "Consider the functionalities proposed for integration and ensure the tests cover these functionalities effectively."
+                    "Write the code for the integration tests, nothing else, literally."
+                    f"\n\nIntegration Actions from Step 2:\n{sanitised_frontend_function_response}\n"
+                    f"\nBackend Endpoint Result from Step 4:\n{sanitized_backend_endpoint_response}\n"
+                    f"\nDocumentation Link: {docslink}\n",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "sanitised_frontend_function_response": sanitised_frontend_function_response,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        response = await agent_executor.ainvoke(context)
+        integration_tests_result = response.get(
+            "output", "No integration tests action performed."
+        )
+        print(f"Integration Tests result: {integration_tests_result}")
+
+        integration_tests_file_name = "integration_tests.py"
+        project_id = request.project
+        doc_ref = db.collection("projectFiles").document(integration_tests_file_name)
+        doc_ref.set(
+            {
+                "code": integration_tests_result,
+                "createdAt": datetime.now(),
+                "name": integration_tests_file_name,
+                "project": db.collection("projects").document(project_id),
+            }
+        )
+        print(
+            f"Document created for file: {integration_tests_file_name} with integration tests code."
+        )
+
+        session_store[session_id] = {
+            "step": 5,
+            "integration_tests_result": integration_tests_result,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+            "sanitized_docReview_response": sanitized_docReview_response,
+        }
+
+        formatted_integration_tests_response = format_response(integration_tests_result)
+        return {
+            "step": 4,
+            "message": "Integration tests created",
+            "output": formatted_integration_tests_response,
+        }
+
+    elif session_data["step"] == 5:
+        print("Entering Step 5: Writing documentation...")
+        sanitized_backend_endpoint_response = session_data.get(
+            "sanitized_backend_endpoint_response", ""
+        )
+        sanitised_frontend_generated_code = session_data.get(
+            "sanitised_frontend_generated_code", ""
+        )
+        # sanitized_docReview_response = session_data.get(
+        #     "sanitized_docReview_response", ""
+        # )
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", "You are a travel API integration documentation expoert."),
+                (
+                    "user",
+                    "Write documentation for the following integration."
+                    f"1. Backend endpoint: {sanitized_backend_endpoint_response}."
+                    f"2. Frontend component: {sanitised_frontend_generated_code}."
+                    f"3. API Provider docs: {request.docslink}"
+                    "It should contain the following sections: Quick start guide, testing options (not that we have written tests at integration_tests.py), troubleshooting guide, support contact info, links to API provider docs.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "docslink": request.docslink,
+            "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
+            "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+        response = await agent_executor.ainvoke(context)
+        documentation_result = response.get(
+            "output", "No documentation action performed."
+        )
+        print(f"Documentation result: {documentation_result}")
+
+        if capabilities_endPoints:
+            endpoint_for_filename = capabilities_endPoints[0].replace("/", "_")
+            documentation_file_name = (
+                f"TechnicalDocumentation_{endpoint_for_filename}.txt"
+            )
+        else:
+            documentation_file_name = "TechnicalDocumentation.txt"
+
+        documentation_file_name = documentation_file_name.replace(":", "_").replace(
+            "?", "_"
+        )
+
+        project_id = request.project
+        doc_ref = db.collection("projectFiles").document(documentation_file_name)
+        doc_ref.set(
+            {
+                "code": documentation_result,
+                "createdAt": datetime.now(),
+                "name": documentation_file_name,
+                "project": db.collection("projects").document(project_id),
+            }
+        )
+        print(f"Documentation saved as {documentation_file_name}")
+
+        session_store[session_id] = {
+            "step": 6,
+        }
+
+        formatted_documentation_result = format_response(documentation_result)
+        return {
+            "step": 5,
+            "message": "Documentation sent",
+            "output": formatted_documentation_result,
+        }
+
+    elif session_data["step"] == 6:
+        print("Entering Step 6: API Key section...")
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are an expert travel API integration developer."
+                    f"1. Search the API providers link: {request.docslink} and learn their process for getting and using the API key."
+                    f"2. Provide the steps for me to get and add the API key in my project in a list format. I'm only concerned about the actual API key, nothing else.",
+                ),
+                (
+                    "user",
+                    "You are an expert travel API integration developer."
+                    f"1. Search the API providers link: {request.docslink} and learn their process for getting and using the API key."
+                    f"2. Provide the steps for me to get and add the API key in my project in a list format. I'm only concerned about the actual API key, nothing else."
+                    "Include full URLs if they are available for the steps.",
+                ),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
+        context = {
+            "input": "",
+            "chat_history": request.chat_history,
+            "docslink": request.docslink,
+        }
+        agent = create_openai_functions_agent(
+            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            tools=tools,
+            prompt=prompt,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+        response = await agent_executor.ainvoke(context)
+        backend_apiKey_result = response.get(
+            "output", "No backend endpoint action performed."
+        )
+
+        session_store[session_id] = {
+            "step": 7,
+        }
+
+        steps_list = backend_apiKey_result.split("\n")
+
+        return {
+            "step": 6,
             "message": "API Key info sent",
             "output": steps_list,
         }
