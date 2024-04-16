@@ -1021,7 +1021,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         )
 
         session_store[session_id] = {
-            "step": 10,
+            "step": 2,
         }
 
         steps_list = backend_apiKey_result.split("\n")
