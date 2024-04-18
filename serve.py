@@ -1188,7 +1188,6 @@ async def agent_aggregation(request: AggregationRequest):
                     "user",
                     "# Start your response with a comment and end your response with a comment.\n"
                     "Create a backend route that acts as an API proxy."
-                    "Do not use the provider docs, only use the data provided below for this request:"
                     f"Route name: {capabilities_routeName}."
                     f"Do not hardcode the payload."
                     f"Method: {capabilities_method}."
@@ -1309,7 +1308,7 @@ async def agent_aggregation(request: AggregationRequest):
         context = {
             "input": "",
             "chat_history": request.chat_history,
-            "sanitized_backend_generated_code": sanitized_backend_generated_code
+            "sanitized_backend_generated_code": sanitized_backend_generated_code,
         }
         agent = create_openai_functions_agent(
             llm=ChatOpenAI(model="gpt-4", temperature=0),
