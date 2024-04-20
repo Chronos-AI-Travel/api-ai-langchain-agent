@@ -229,6 +229,7 @@ async def agent_invoke(request: AgentInvokeRequest):
     capabilities_headers = []
     capabilities_method = []
     capabilities_routeName = []
+    capabilities_customInstructions = []
     capabilities_errorBody = []
     capabilities_requestBody = []
     capabilities_responseBody = []
@@ -253,6 +254,9 @@ async def agent_invoke(request: AgentInvokeRequest):
                 capabilities_endPoints.append(doc_data.get("endPoint", "No endPoint"))
                 capabilities_headers.append(doc_data.get("headers", "No headers"))
                 capabilities_routeName.append(doc_data.get("routeName", "No routeName"))
+                capabilities_customInstructions.append(
+                    doc_data.get("customInstructions", "No customInstructions")
+                )
                 capabilities_method.append(doc_data.get("method", "No method"))
                 capabilities_errorBody.append(doc_data.get("errorBody", "No errorBody"))
                 capabilities_requestBody.append(
@@ -355,6 +359,7 @@ async def agent_invoke(request: AgentInvokeRequest):
 
     elif session_data["step"] == 2:
         print(f"capabilities_routeName: {capabilities_routeName}")
+        print(f"capabilities_customInstructions: {capabilities_customInstructions}")
         print(f"sanitized_capabilities_headers: {sanitized_capabilities_headers}")
         print(f"capabilities_endPoints: {capabilities_endPoints}")
         print(f"capabilities_method: {capabilities_method}")
@@ -373,6 +378,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     f"Do not hardcode the payload."
                     f"Method: {capabilities_method}."
                     f"Headers: {sanitized_capabilities_headers}."
+                    f"{capabilities_customInstructions}."
                     f"Endpoint url: {capabilities_endPoints}."
                     f"Consider the error logging if required: \n{sanitized_capabilities_errorBody}."
                     "Handle the response."
@@ -392,6 +398,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_endPoints": capabilities_endPoints,
             "sanitized_capabilities_headers": sanitized_capabilities_headers,
             "capabilities_routeName": capabilities_routeName,
+            "capabilities_customInstructions": capabilities_customInstructions,
             "sanitized_capabilities_errorBody": sanitized_capabilities_errorBody,
             "concatenated_sanitized_backend_contents": concatenated_sanitized_backend_contents,
             "request.backendFramework": request.backendFramework,
