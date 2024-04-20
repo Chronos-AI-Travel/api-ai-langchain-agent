@@ -1383,7 +1383,7 @@ async def agent_aggregation(request: AggregationRequest):
             [
                 (
                     "system",
-                    f"You are an expert {request.frontendFramework} developer. Your task now is to create UI elements for displaying API response data.",
+                    f"You are an expert {request.backendFramework} developer. Your task is to normalise the response data from the multiple providers in the aggregation function.",
                 ),
                 (
                     "user",
