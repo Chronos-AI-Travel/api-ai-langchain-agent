@@ -144,7 +144,7 @@ class AgentInvokeRequest(BaseModel):
     backend_file_names: Optional[List[str]] = None
     backend_file_urls: Optional[List[str]] = None
     backend_file_paths: Optional[List[str]] = None
-    capabilityRefs: Optional[List[str]] = None
+    capabilityRefs: Optional[str] = None
     userRequestFields: Optional[List[str]] = None
     userResponseFields: Optional[List[str]] = None
     chat_history: List[BaseMessage] = Field(
@@ -167,7 +167,7 @@ class AggregationRequest(BaseModel):
     backend_file_names: Optional[List[str]] = None
     backend_file_urls: Optional[List[str]] = None
     backend_file_paths: Optional[List[str]] = None
-    capabilityRefs: Optional[List[str]] = None
+    capabilityRefs: Optional[str] = None
     userRequestFields: Optional[List[str]] = None
     userResponseFields: Optional[List[str]] = None
     chat_history: List[BaseMessage] = Field(
@@ -245,56 +245,61 @@ async def agent_invoke(request: AgentInvokeRequest):
     # Fetch capability data
     db = firestore.client()
     if request.capabilityRefs:
-        capability_docs = await asyncio.gather(
-            *[fetch_capability_data(db, path) for path in request.capabilityRefs]
-        )
-        for doc_data in capability_docs:
-            if doc_data:
-                capabilities_names.append(doc_data.get("name", "No name"))
-                capabilities_endPoints.append(doc_data.get("endPoint", "No endPoint"))
-                capabilities_headers.append(doc_data.get("headers", "No headers"))
-                capabilities_routeName.append(doc_data.get("routeName", "No routeName"))
-                capabilities_customInstructions.append(
-                    doc_data.get("customInstructions", "No customInstructions")
-                )
-                capabilities_method.append(doc_data.get("method", "No method"))
-                capabilities_errorBody.append(doc_data.get("errorBody", "No errorBody"))
-                capabilities_requestBody.append(
-                    doc_data.get("requestBody", "No requestBody")
-                )
-                capabilities_responseBody.append(
-                    doc_data.get("responseBody", "No responseBody")
-                )
-                capabilities_responseGuidance.append(
-                    doc_data.get("responseGuidance", "No responseGuidance")
-                )
-                capabilities_requestGuidance.append(
-                    doc_data.get("requestGuidance", "No requestGuidance")
-                )
-                sanitized_capabilities_errorBody = [
-                    errorBody.replace("{", "{{").replace("}", "}}")
-                    for errorBody in capabilities_errorBody
-                ]
-                sanitized_capabilities_headers = [
-                    headers.replace("{", "{{").replace("}", "}}")
-                    for headers in capabilities_headers
-                ]
-                sanitized_capabilities_requestBody = [
-                    requestBody.replace("{", "{{").replace("}", "}}")
-                    for requestBody in capabilities_requestBody
-                ]
-                sanitized_capabilities_responseBody = [
-                    responseBody.replace("{", "{{").replace("}", "}}")
-                    for responseBody in capabilities_responseBody
-                ]
-                sanitized_capabilities_responseGuidance = [
-                    responseGuidance.replace("{", "{{").replace("}", "}}")
-                    for responseGuidance in capabilities_responseGuidance
-                ]
-                sanitized_capabilities_requestGuidance = [
-                    requestGuidance.replace("{", "{{").replace("}", "}}")
-                    for requestGuidance in capabilities_requestGuidance
-                ]
+        capability_doc_data = await fetch_capability_data(db, request.capabilityRefs)
+        if capability_doc_data:
+            capabilities_names.append(capability_doc_data.get("name", "No name"))
+            capabilities_endPoints.append(
+                capability_doc_data.get("endPoint", "No endPoint")
+            )
+            capabilities_headers.append(
+                capability_doc_data.get("headers", "No headers")
+            )
+            capabilities_routeName.append(
+                capability_doc_data.get("routeName", "No routeName")
+            )
+            capabilities_customInstructions.append(
+                capability_doc_data.get("customInstructions", "No customInstructions")
+            )
+            capabilities_method.append(capability_doc_data.get("method", "No method"))
+            capabilities_errorBody.append(
+                capability_doc_data.get("errorBody", "No errorBody")
+            )
+            capabilities_requestBody.append(
+                capability_doc_data.get("requestBody", "No requestBody")
+            )
+            capabilities_responseBody.append(
+                capability_doc_data.get("responseBody", "No responseBody")
+            )
+            capabilities_responseGuidance.append(
+                capability_doc_data.get("responseGuidance", "No responseGuidance")
+            )
+            capabilities_requestGuidance.append(
+                capability_doc_data.get("requestGuidance", "No requestGuidance")
+            )
+            sanitized_capabilities_errorBody = [
+                errorBody.replace("{", "{{").replace("}", "}}")
+                for errorBody in capabilities_errorBody
+            ]
+            sanitized_capabilities_headers = [
+                headers.replace("{", "{{").replace("}", "}}")
+                for headers in capabilities_headers
+            ]
+            sanitized_capabilities_requestBody = [
+                requestBody.replace("{", "{{").replace("}", "}}")
+                for requestBody in capabilities_requestBody
+            ]
+            sanitized_capabilities_responseBody = [
+                responseBody.replace("{", "{{").replace("}", "}}")
+                for responseBody in capabilities_responseBody
+            ]
+            sanitized_capabilities_responseGuidance = [
+                responseGuidance.replace("{", "{{").replace("}", "}}")
+                for responseGuidance in capabilities_responseGuidance
+            ]
+            sanitized_capabilities_requestGuidance = [
+                requestGuidance.replace("{", "{{").replace("}", "}}")
+                for requestGuidance in capabilities_requestGuidance
+            ]
 
     if session_data["step"] == 1:
         print("Entering Step 1: Starting doc review...")
@@ -358,6 +363,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         }
 
     elif session_data["step"] == 2:
+        print("Entering Step 2: Backend elements...")
         print(f"capabilities_routeName: {capabilities_routeName}")
         print(f"capabilities_customInstructions: {capabilities_customInstructions}")
         print(f"sanitized_capabilities_headers: {sanitized_capabilities_headers}")
@@ -415,55 +421,32 @@ async def agent_invoke(request: AgentInvokeRequest):
         )
         formatted_backend_response = format_response(backend_endpoint_response)
 
-        file_created = False
-        for index, file_name in enumerate(backend_file_names):
-            if file_name.endswith(".py"):
-                file_path = backend_file_paths[index]  # Example way to get the repoPath
-                doc_ref = db.collection("projectFiles").document(file_name)
-                doc_ref.set(
-                    {
-                        "name": file_name,
-                        "createdAt": datetime.now(),
-                        "project": db.collection("projects").document(project_id),
-                        "code": formatted_backend_response,  # Updated to use formatted response
-                        "repoPath": file_path,  # Include the repoPath
-                    }
-                )
-                print(
-                    f"Document created/updated for file: {file_name} with backend endpoint code and repoPath."
-                )
-                file_created = True
-                break
+        file_name = backend_file_names[0]  # Use the first provided backend file name
+        file_path = backend_file_paths[0]  # Use the corresponding file path
 
-        if not file_created:
-            default_file_name = "app.py"
-            default_file_path = (
-                "path/to/default/app.py"  # Example path for the default file
-            )
-            doc_ref = db.collection("projectFiles").document(default_file_name)
-            doc_ref.set(
-                {
-                    "name": default_file_name,
-                    "createdAt": datetime.now(),
-                    "project": db.collection("projects").document(project_id),
-                    "code": formatted_backend_response,  # Updated to use formatted response
-                    "repoPath": default_file_path,  # Include the repoPath for the default file
-                }
-            )
-            print(
-                f"Default document created for file: {default_file_name} with backend endpoint code and repoPath."
-            )
-            print(
-                f"Default document created for file: {default_file_name} with backend endpoint code."
-            )
+        # Create or update the document in the database
+        doc_ref = db.collection("projectFiles").document(file_name)
+        doc_ref.set(
+            {
+                "name": file_name,
+                "createdAt": datetime.now(),
+                "project": db.collection("projects").document(project_id),
+                "code": formatted_backend_response,  # Use the formatted response
+                "repoPath": file_path,  # Include the repository path
+            }
+        )
+
+        # Log the action to the console
+        print(
+            f"Document created/updated for file: {file_name} with backend endpoint code and repoPath."
+        )
 
         session_store[session_id] = {
             "step": 3,
-            "backend_file_names": backend_file_names,
-            "backend_endpoint_response": backend_endpoint_response,
+            # "response_ui_response": response_ui_response,
+            # "sanitized_backend_endpoint_response": sanitized_backend_endpoint_response,
         }
 
-        formatted_backend_response = format_response(backend_endpoint_response)
         return {
             "step": 2,
             "message": "Backend endpoints generated",
@@ -484,6 +467,8 @@ async def agent_invoke(request: AgentInvokeRequest):
         sanitized_backend_endpoint_response = session_data.get(
             "sanitized_backend_endpoint_response", ""
         )
+        response_ui_response = "No UI update action performed."
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
