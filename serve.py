@@ -32,6 +32,7 @@ import asyncio
 # Env Variables
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
+print("Using OPENAI_API_KEY:", openai_api_key)
 tavily_api_key = os.getenv("TAVILY_API_KEY")
 access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 session_store = {}
