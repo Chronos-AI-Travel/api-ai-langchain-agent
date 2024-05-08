@@ -422,7 +422,7 @@ async def agent_invoke(request: AgentInvokeRequest):
         formatted_backend_response = format_response(backend_endpoint_response)
 
         file_name = backend_file_names[0]  # Use the first provided backend file name
-        file_path = backend_file_paths[0]  # Use the corresponding file path
+        file_path = backend_file_paths[0]  # Use the corresponding file patha
 
         # Create or update the document in the database
         doc_ref = db.collection("projectFiles").document(file_name)
