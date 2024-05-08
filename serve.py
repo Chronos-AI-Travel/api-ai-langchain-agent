@@ -32,7 +32,6 @@ import asyncio
 # Env Variables
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
-print("Using OPENAI_API_KEY:", openai_api_key)
 tavily_api_key = os.getenv("TAVILY_API_KEY")
 access_token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 session_store = {}
@@ -411,7 +410,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "request.backendFramework": request.backendFramework,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4-turbo-preview", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -483,7 +482,7 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"Constructing the payload according to the API's expected structure: {sanitized_capabilities_requestBody}."
                     f"Create only the following request fields: {sanitized_capabilities_requestGuidance} {request.userRequestFields}."
-                    f"Integrate the new code into the existing code, without altering or removing existing code, found here: {concatenated_sanitized_frontend_contents}, "
+                    f"Integrate the new code into the existing code, maintain any component styling, found here: {concatenated_sanitized_frontend_contents}, "
                     "Avoid using placeholders that might suggest removing existing code."
                     "Keep all frontend code in a single component."
                     "Create the required state fields."
@@ -503,7 +502,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "concatenated_sanitized_frontend_contents": concatenated_sanitized_frontend_contents,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -600,7 +599,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -684,8 +683,9 @@ async def agent_invoke(request: AgentInvokeRequest):
                     "Assume the backend will be hosted on on http://localhost:5000/."
                     "Do not use the provider docs, only use the data provided below for this request:"
                     f"See the UI fields we have here and write the API request-response handler to handle them: {sanitised_frontend_generated_code}."
-                    f"Request query parameters: {sanitized_capabilities_requestBody}"
-                    f"Response structure: {sanitized_capabilities_responseBody}"
+                    f"Request query parameters data structure: {sanitized_capabilities_requestBody}."
+                    f"Request query parameters to include in the handler: {sanitized_capabilities_requestGuidance}."
+                    f"Response structure: {sanitized_capabilities_responseBody}."
                     "Return to me the existing code, plus the API request-response handler component."
                     "Do not use any dummy data."
                     "Integrate new code without altering or removing existing code, you must add to the existing code and respond with the full code."
@@ -701,12 +701,13 @@ async def agent_invoke(request: AgentInvokeRequest):
             "input": "",
             "chat_history": request.chat_history,
             "sanitized_capabilities_requestBody": sanitized_capabilities_requestBody,
+            "sanitized_capabilities_requestGuidance": sanitized_capabilities_requestGuidance,
             "sanitised_frontend_generated_code": sanitised_frontend_generated_code,
             "capabilities_routeName": capabilities_routeName,
             "sanitized_capabilities_responseBody": sanitized_capabilities_responseBody,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
@@ -805,7 +806,7 @@ async def agent_invoke(request: AgentInvokeRequest):
             "capabilities_routeName": capabilities_routeName,
         }
         agent = create_openai_functions_agent(
-            llm=ChatOpenAI(model="gpt-4", temperature=0),
+            llm=ChatOpenAI(model="gpt-4-turbo", temperature=0),
             tools=tools,
             prompt=prompt,
         )
